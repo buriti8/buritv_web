@@ -1,0 +1,2198 @@
+/*
+ * BuriTV web: el mismo sistema visual de la app (siempre oscuro).
+ *  Capas    bg → panel → surface → surface-hi, cada una un poco más clara.
+ *  Marca    --accent solo para lo principal (número de la placa). La
+ *           selección usa la versión tonal (--container / --on-container).
+ *  Foco     anillo blanco sobre una superficie algo más clara (teclado).
+ *  Color    rojo = en vivo; ámbar = favoritos y avisos.
+ *  Tipos    Roboto Condensed para nombres, números y títulos (estilo
+ *           marcador deportivo); Roboto para lo secundario.
+ */
+:root {
+    --bg: #0e1513;
+    --panel: #131c19;
+    --surface: #1a2421;
+    --surface-hi: #222e2a;
+    --border: #2d3a35;
+    --accent: #0a7724;
+    --accent-soft: #3fbf68;
+    --container: #143523;
+    --on-container: #8fe0a9;
+    --focus: #f2f5f3;
+    --focus-fill: #26342f;
+    --live: #ef4652;
+    --favorite: #f0b43c;
+    --warning: #f0b43c;
+    --text: #e8eeeb;
+    --text-dim: #9eada6;
+    --text-mute: #66756f;
+    --scrim: rgba(8, 12, 11, 0.8);
+    --scrim-soft: rgba(8, 12, 11, 0.45);
+    --on-video: rgba(14, 21, 19, 0.66);
+    --on-video-line: rgba(242, 245, 243, 0.26);
+    --logo-tile: #000;
+    --logo-line: rgba(242, 245, 243, 0.1);
+
+    --font-display: 'Roboto Condensed', 'Arial Narrow', sans-serif;
+    --font-body: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --panel-w: 360px;
+    color-scheme: dark;
+}
+
+* {
+    box-sizing: border-box;
+}
+html,
+body,
+#root {
+    height: 100%;
+    margin: 0;
+}
+body {
+    background: var(--bg);
+    color: var(--text);
+    font: 400 15px/1.35 var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+}
+button {
+    font: inherit;
+    color: inherit;
+    border: 0;
+    background: none;
+    padding: 0;
+    cursor: pointer;
+}
+h1,
+h2,
+p {
+    margin: 0;
+}
+:focus {
+    outline: none;
+}
+:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+}
+
+/* ── Marca ─────────────────────────────────────────────────────────── */
+.brand {
+    font: 700 26px/1 var(--font-display);
+    color: var(--focus);
+}
+.brand-xl {
+    font-size: 48px;
+}
+.brand-accent {
+    color: var(--accent-soft);
+}
+.brand-count {
+    color: var(--text-mute);
+    font-size: 13px;
+}
+
+/* ── Estructura ────────────────────────────────────────────────────── */
+.app {
+    height: 100dvh;
+    display: grid;
+    overflow: hidden;
+}
+/* Celular: video arriba, todo lo demás debajo con su propio scroll */
+.app.narrow {
+    grid-template-rows: auto 1fr;
+    grid-template-areas: 'stage' 'panel';
+}
+/* Tablet / escritorio: el diseño de la TV (lista a la izquierda) */
+.app.wide {
+    grid-template-columns: var(--panel-w) 1fr;
+    grid-template-areas: 'panel stage';
+}
+.stage {
+    grid-area: stage;
+    position: relative;
+    background: #000;
+    min-width: 0;
+    cursor: none;
+}
+.stage.show-cursor,
+.narrow .stage {
+    cursor: auto;
+}
+.panel {
+    grid-area: panel;
+    background: var(--bg);
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+.wide .panel {
+    background: var(--panel);
+}
+.video-box {
+    position: relative;
+    width: 100%;
+    background: #000;
+    overflow: hidden;
+}
+.narrow .video-box {
+    aspect-ratio: 16 / 9;
+    max-height: 56dvh;
+}
+.wide .video-box,
+.is-fs .video-box {
+    height: 100%;
+}
+.stage:fullscreen {
+    width: 100vw;
+    height: 100vh;
+}
+.stage:fullscreen .video-box {
+    height: 100%;
+    max-height: none;
+    aspect-ratio: auto;
+}
+.video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+    border: 0;
+}
+
+/* ── Placa del canal (marcador) ────────────────────────────────────── */
+.plate-row {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    max-width: 100%;
+}
+.plate {
+    display: flex;
+    align-items: stretch;
+    min-width: 0;
+    height: 56px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--scrim);
+}
+.plate-num {
+    min-width: 52px;
+    padding: 0 10px;
+    display: grid;
+    place-items: center;
+    background: var(--accent);
+    color: #fff;
+    font: 700 30px/1 var(--font-display);
+    font-variant-numeric: tabular-nums;
+}
+.plate-num.warn {
+    background: var(--warning);
+    color: var(--bg);
+}
+.plate-logo {
+    width: 56px;
+    padding: 7px;
+    background: var(--logo-tile);
+    border-inline: 1px solid var(--logo-line);
+    flex: none;
+}
+.plate-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.plate-body {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 0 18px 0 14px;
+    min-width: 0;
+}
+.plate-name {
+    font: 700 24px/1.05 var(--font-display);
+    color: var(--focus);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.plate-sub {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-top: 2px;
+    white-space: nowrap;
+}
+.plate-sub.warn {
+    color: var(--warning);
+    font-weight: 700;
+}
+.plate-live {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 12px;
+    border-radius: 6px;
+    background: var(--live);
+    color: #fff;
+    font: 700 17px/1 var(--font-display);
+    white-space: nowrap;
+}
+.plate-live .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #fff;
+}
+.plate-sm .plate {
+    height: 34px;
+    border-radius: 5px;
+}
+.plate-sm .plate-num {
+    min-width: 32px;
+    padding: 0 7px;
+    font-size: 18px;
+}
+.plate-sm .plate-logo {
+    width: 34px;
+    padding: 4px;
+}
+.plate-sm .plate-body {
+    padding: 0 11px 0 9px;
+}
+.plate-sm .plate-name {
+    font-size: 16px;
+}
+.plate-sm .plate-live {
+    padding: 0 8px;
+    gap: 5px;
+    border-radius: 5px;
+    font-size: 13px;
+}
+.plate-osd .plate {
+    height: 84px;
+    border-radius: 8px;
+}
+.plate-osd .plate-num {
+    min-width: 96px;
+    padding: 0 16px;
+    font-size: 54px;
+    letter-spacing: 2px;
+}
+.plate-osd .plate-logo {
+    width: 84px;
+    padding: 10px;
+}
+.plate-osd .plate-body {
+    padding: 0 28px 0 20px;
+}
+.plate-osd .plate-name {
+    font-size: 36px;
+}
+.plate-osd .plate-sub {
+    font-size: 17px;
+    margin-top: 3px;
+}
+
+.plate-anchor {
+    position: absolute;
+    top: 26px;
+    left: 32px;
+    right: 32px;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+    z-index: 3;
+}
+.plate-anchor.visible {
+    opacity: 1;
+}
+.osd {
+    position: absolute;
+    top: 26px;
+    left: 32px;
+    right: 32px;
+    z-index: 6;
+    pointer-events: none;
+    animation: osd-in 0.22s cubic-bezier(0.33, 1, 0.68, 1);
+}
+.narrow .osd {
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    transform-origin: left top;
+    scale: 0.6;
+}
+@keyframes osd-in {
+    from {
+        opacity: 0;
+        translate: -40px 0;
+    }
+}
+
+/* ── Controles sobre el video ──────────────────────────────────────── */
+.controls {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s;
+    z-index: 4;
+}
+.controls.visible {
+    opacity: 1;
+}
+.controls-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px 0;
+    min-width: 0;
+}
+.controls.visible .controls-top {
+    pointer-events: auto;
+}
+/* Todo va en la franja de abajo; solo ella se oscurece */
+.controls-bottom {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: 'center center' 'left util';
+    align-items: center;
+    gap: 8px 10px;
+    padding: 56px 12px 10px;
+    background: linear-gradient(to top, var(--scrim) 25%, transparent);
+}
+.controls.visible .controls-bottom {
+    pointer-events: auto;
+}
+.wide .controls-bottom,
+.is-fs .controls-bottom {
+    padding: 90px 32px 24px;
+}
+.wide .controls-bottom {
+    grid-template-columns: 1fr auto 1fr;
+    grid-template-areas: 'left center util';
+}
+.controls-center {
+    grid-area: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+}
+.wide .controls-center {
+    gap: 20px;
+}
+.controls-left {
+    grid-area: left;
+    min-width: 0;
+    display: flex;
+}
+.controls-util {
+    grid-area: util;
+    justify-self: end;
+}
+.controls-util {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.wide .controls-util {
+    gap: 14px;
+}
+
+.ctrl {
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--on-video);
+    border: 2px solid var(--on-video-line);
+    color: var(--focus);
+    transition: transform 0.12s, background 0.12s, border-color 0.12s;
+}
+.ctrl-sm {
+    width: 40px;
+    height: 40px;
+}
+.ctrl-md {
+    width: 48px;
+    height: 48px;
+}
+.ctrl-lg {
+    width: 60px;
+    height: 60px;
+}
+.wide .ctrl-sm {
+    width: 54px;
+    height: 54px;
+}
+.wide .ctrl-md {
+    width: 56px;
+    height: 56px;
+}
+.wide .ctrl-lg {
+    width: 68px;
+    height: 68px;
+}
+.ctrl:hover,
+.ctrl:focus-visible {
+    background: var(--focus-fill);
+    border-color: var(--focus);
+    transform: scale(1.08);
+    outline: none;
+}
+.ctrl:active {
+    transform: scale(0.96);
+}
+.ctrl.is-fav {
+    color: var(--favorite);
+}
+
+.unmute-pill {
+    position: absolute;
+    left: 50%;
+    bottom: 18%;
+    translate: -50% 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border-radius: 8px;
+    background: var(--surface-hi);
+    border: 2px solid var(--focus);
+    font-weight: 700;
+}
+
+/* ── Opciones: "Opción [1][2][3]" ──────────────────────────────────── */
+.seg-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.seg-label {
+    color: var(--text-dim);
+    font-size: 13px;
+}
+.seg-track {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    border-radius: 7px;
+    background: var(--surface);
+}
+.seg {
+    position: relative;
+    min-width: 38px;
+    height: 32px;
+    padding: 0 8px;
+    border-radius: 5px;
+    color: var(--text-dim);
+    font: 700 17px/1 var(--font-display);
+    border: 2px solid transparent;
+}
+.seg.on {
+    background: var(--container);
+    color: var(--on-container);
+}
+.seg:hover,
+.seg:focus-visible {
+    border-color: var(--focus);
+    color: #fff;
+    outline: none;
+}
+.seg-dot {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--text-dim);
+}
+.seg-dot.ok {
+    background: var(--accent-soft);
+}
+.seg-dot.bad {
+    background: var(--warning);
+}
+.seg-video .seg-label {
+    color: var(--focus);
+}
+.seg-video .seg-track {
+    background: var(--on-video);
+}
+/* Escritorio: segmentos grandes como en la TV */
+.seg-tv {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+.seg-tv .seg-label {
+    color: var(--focus);
+    font-size: 15px;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+.seg-tv .seg-track {
+    background: none;
+    padding: 0;
+    gap: 6px;
+}
+.seg-tv .seg {
+    width: 52px;
+    height: 52px;
+    border-radius: 6px;
+    font-size: 24px;
+    background: var(--on-video);
+    border-color: var(--on-video-line);
+}
+.seg-tv .seg.on {
+    background: var(--container);
+    border-color: var(--accent);
+}
+.seg-tv .seg-dot {
+    top: 6px;
+    right: 6px;
+    width: 7px;
+    height: 7px;
+}
+
+/* ── Estado del stream ─────────────────────────────────────────────── */
+.status {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 0 24px;
+    text-align: center;
+    background: var(--scrim-soft);
+}
+.status-dark {
+    background: var(--scrim);
+}
+.status-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    color: var(--warning);
+    background: rgba(240, 180, 60, 0.12);
+}
+.status-title {
+    font: 700 18px/1.2 var(--font-display);
+    color: var(--focus);
+}
+.wide .status-title {
+    font-size: 28px;
+}
+.status-sub {
+    color: var(--text-dim);
+    font-size: 13px;
+}
+.wide .status-sub {
+    font-size: 16px;
+}
+.status-chip {
+    padding: 5px 12px;
+    border-radius: 5px;
+    background: var(--container);
+    color: var(--on-container);
+    font-size: 12px;
+    font-weight: 700;
+}
+.quiet-spinner {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 2;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--scrim-soft);
+}
+.wide .quiet-spinner {
+    top: 30px;
+    right: 32px;
+    width: 44px;
+    height: 44px;
+}
+.spinner {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 3px solid rgba(242, 245, 243, 0.15);
+    border-top-color: var(--accent-soft);
+    animation: spin 0.9s linear infinite;
+}
+.spinner-sm {
+    width: 18px;
+    height: 18px;
+    border-width: 2px;
+    border-top-color: var(--text);
+}
+@keyframes spin {
+    to {
+        rotate: 360deg;
+    }
+}
+.btn-tonal {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    padding: 10px 18px;
+    border-radius: 6px;
+    background: var(--container);
+    color: var(--on-container);
+    font-weight: 700;
+    font-size: 14px;
+    text-decoration: none;
+    border: 2px solid transparent;
+}
+.btn-tonal:hover,
+.btn-tonal:focus-visible {
+    border-color: var(--focus);
+    outline: none;
+}
+
+/* ── Panel: lo que suena (celular) ─────────────────────────────────── */
+.now {
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    border-bottom: 1px solid var(--border);
+}
+.now-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.now-num {
+    min-width: 40px;
+    height: 40px;
+    padding: 0 6px;
+    border-radius: 5px;
+    display: grid;
+    place-items: center;
+    background: var(--accent);
+    color: #fff;
+    font: 700 22px/1 var(--font-display);
+    font-variant-numeric: tabular-nums;
+}
+.now-body {
+    flex: 1;
+    min-width: 0;
+}
+.now-title {
+    font: 700 22px/1.1 var(--font-display);
+    color: var(--focus);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.now-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+    color: var(--text-dim);
+    font-size: 13px;
+}
+.now-status.live {
+    color: var(--text);
+}
+.dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-mute);
+    flex: none;
+}
+.dot.live {
+    background: var(--live);
+}
+.dot.bad {
+    background: var(--warning);
+}
+.fav-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--surface);
+    color: var(--text-dim);
+    flex: none;
+}
+.fav-btn.on {
+    color: var(--favorite);
+    background: rgba(240, 180, 60, 0.14);
+}
+
+/* ── Marca (escritorio) ────────────────────────────────────────────── */
+.brand-bar {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 26px 22px 0;
+}
+
+/* ── Buscador y pestañas ───────────────────────────────────────────── */
+.filters {
+    padding: 12px 12px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.wide .filters {
+    padding: 18px 14px 6px;
+    gap: 12px;
+}
+.search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 44px;
+    padding: 0 14px;
+    border-radius: 8px;
+    background: var(--surface);
+    border: 2px solid transparent;
+    color: var(--text-mute);
+}
+.wide .search {
+    height: 48px;
+}
+.search:focus-within {
+    border-color: var(--focus);
+    background: var(--surface-hi);
+    color: var(--focus);
+}
+.search input {
+    flex: 1;
+    min-width: 0;
+    background: none;
+    border: 0;
+    color: var(--text);
+    font: 400 15px var(--font-body);
+}
+.search input::placeholder {
+    color: var(--text-mute);
+}
+.search input::-webkit-search-cancel-button {
+    display: none;
+}
+.search-clear {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--text-dim);
+    color: var(--bg);
+}
+.tabs {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+}
+/* Escritorio: barra fina visible para desplazar las categorías */
+.wide .tabs {
+    scrollbar-width: thin;
+    scrollbar-color: var(--text-mute) transparent;
+    padding-bottom: 8px;
+}
+.wide .tabs::-webkit-scrollbar {
+    display: block;
+    height: 6px;
+}
+.wide .tabs::-webkit-scrollbar-thumb {
+    background: var(--text-mute);
+    border-radius: 3px;
+}
+.wide .tabs::-webkit-scrollbar-thumb:hover {
+    background: var(--text-dim);
+}
+.tabs::-webkit-scrollbar {
+    display: none;
+}
+.tab {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 36px;
+    padding: 0 14px;
+    border-radius: 6px;
+    background: var(--surface);
+    border: 2px solid transparent;
+    flex: none;
+}
+.wide .tab {
+    height: 42px;
+    padding: 0 16px;
+}
+.tab-label {
+    font: 700 15px/1 var(--font-display);
+    color: var(--text-dim);
+}
+.wide .tab-label {
+    font-size: 17px;
+}
+.tab-count {
+    font-size: 12px;
+    color: var(--text-mute);
+    font-variant-numeric: tabular-nums;
+}
+.tab-star {
+    color: var(--favorite);
+}
+.tab.on {
+    background: var(--container);
+}
+.tab.on .tab-label,
+.tab.on .tab-count,
+.tab.on .tab-star {
+    color: var(--on-container);
+}
+.tab:hover,
+.tab:focus-visible {
+    background: var(--focus-fill);
+    border-color: var(--focus);
+    outline: none;
+}
+.tab:hover .tab-label,
+.tab:focus-visible .tab-label {
+    color: #fff;
+}
+
+/* ── Lista de canales ──────────────────────────────────────────────── */
+.list {
+    padding: 0 8px 24px;
+    display: flex;
+    flex-direction: column;
+}
+.wide .list {
+    padding: 8px 14px 24px;
+}
+.section-title {
+    font: 700 15px/1 var(--font-display);
+    color: var(--text-dim);
+    padding: 16px 10px 8px;
+}
+.wide .section-title {
+    font-size: 17px;
+}
+.row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 58px;
+    margin-bottom: 2px;
+    padding: 0 8px;
+    border-radius: 8px;
+    border: 2px solid transparent;
+    text-align: left;
+    width: 100%;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+.row:hover,
+.row:focus-visible {
+    background: var(--focus-fill);
+    border-color: var(--focus);
+    outline: none;
+}
+.row.active {
+    background: var(--container);
+}
+.row.active:hover,
+.row.active:focus-visible {
+    background: var(--focus-fill);
+}
+.row-num {
+    min-width: 30px;
+    height: 26px;
+    padding: 0 4px;
+    border-radius: 4px;
+    display: grid;
+    place-items: center;
+    color: var(--text-mute);
+    font: 700 16px/1 var(--font-display);
+    font-variant-numeric: tabular-nums;
+}
+.wide .row-num {
+    font-size: 18px;
+}
+.row.active .row-num {
+    background: var(--accent);
+    color: #fff;
+}
+.logo-tile {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+    padding: 5px;
+    background: var(--logo-tile);
+    border: 1px solid var(--logo-line);
+    display: grid;
+    place-items: center;
+    flex: none;
+}
+.logo-tile img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.logo-fallback {
+    font: 700 14px/1 var(--font-display);
+    color: var(--text);
+}
+.row-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+.row-name {
+    font: 700 17px/1.15 var(--font-display);
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.wide .row-name {
+    font-size: 20px;
+}
+.row-sub {
+    font-size: 12px;
+    color: var(--text-mute);
+    margin-top: 1px;
+}
+.row.active .row-sub {
+    color: var(--on-container);
+}
+.row-fav {
+    color: var(--favorite);
+    display: grid;
+}
+.row-playing {
+    color: var(--accent-soft);
+    display: grid;
+}
+.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 40px 20px;
+    color: var(--text-mute);
+    text-align: center;
+}
+.empty p {
+    color: var(--text-dim);
+}
+.hint {
+    margin-top: auto;
+    padding: 12px 22px 16px;
+    font-size: 12px;
+    color: var(--text-mute);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+}
+.hint kbd {
+    font: 700 11px/1 var(--font-body);
+    color: var(--text-dim);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 5px;
+    margin-right: 4px;
+}
+
+/* ── Avisos ────────────────────────────────────────────────────────── */
+.toast-wrap {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: max(24px, env(safe-area-inset-bottom));
+    display: flex;
+    justify-content: center;
+    padding: 0 16px;
+    z-index: 50;
+    pointer-events: none;
+}
+.wide .toast-wrap {
+    bottom: 150px;
+}
+.toast {
+    max-width: 640px;
+    padding: 11px 18px;
+    border-radius: 8px;
+    background: var(--surface-hi);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 14px;
+    text-align: center;
+}
+
+/* ── Carga ─────────────────────────────────────────────────────────── */
+.loader {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 0 24px;
+    text-align: center;
+}
+.loader-text {
+    color: var(--text-dim);
+}
+.load-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+.load-error-title {
+    font-weight: 700;
+    font-size: 17px;
+}
+.load-error-sub {
+    color: var(--text-dim);
+}
+
+/* ── Pantallas medianas: lista algo más angosta ────────────────────── */
+@media (min-width: 820px) and (max-width: 1100px) {
+    :root {
+        --panel-w: 320px;
+    }
+    .controls-bottom .seg-tv .seg {
+        width: 44px;
+        height: 44px;
+        font-size: 20px;
+    }
+}
+
+/* ── Movimiento reducido ───────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+    .osd {
+        animation: none;
+    }
+    .ctrl,
+    .controls,
+    .plate-anchor {
+        transition: none;
+    }
+}
+
+/* ── Desplazamiento del panel ──────────────────────────────────────── */
+/* Como en la app: lo de arriba queda fijo (marca o "ahora suena", buscador
+   y pestañas) y solo la lista se desplaza */
+.panel {
+    overflow: hidden;
+}
+.list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+/* ── Varios canales a la vez ───────────────────────────────────────── */
+.brand-tools {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.multi-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text-dim);
+    font-size: 13px;
+    font-weight: 700;
+    border: 2px solid transparent;
+}
+.multi-toggle.on {
+    background: var(--container);
+    color: var(--on-container);
+}
+.multi-toggle:hover,
+.multi-toggle:focus-visible {
+    border-color: var(--focus);
+    outline: none;
+}
+.multi {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: #000;
+    z-index: 4;
+}
+/* Los recuadros mantienen 16:9 y el conjunto queda centrado en el área */
+.multi-grid {
+    flex: 1;
+    min-height: 0;
+    container-type: size;
+    display: grid;
+    place-content: center;
+}
+.multi-grid-inner {
+    --gap: 4px;
+    --tw: min(
+        calc((100cqw - (var(--cols) - 1) * var(--gap)) / var(--cols)),
+        calc((100cqh - (var(--rows) - 1) * var(--gap)) / var(--rows) * 16 / 9)
+    );
+    display: grid;
+    gap: var(--gap);
+    grid-template-columns: repeat(var(--cols), var(--tw));
+    grid-auto-rows: calc(var(--tw) * 9 / 16);
+    justify-content: center;
+    align-content: center;
+}
+.multi-grid-inner .tile {
+    border-radius: 6px;
+}
+.tile {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: #000;
+    outline: 2px solid transparent;
+    outline-offset: -2px;
+    cursor: pointer;
+}
+.tile.focused {
+    outline-color: var(--accent-soft);
+}
+.tile-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px;
+    text-align: center;
+    color: var(--text-mute);
+    background: var(--panel);
+    border: 2px dashed var(--border);
+    cursor: default;
+    font-size: 13px;
+}
+.tile .status {
+    gap: 6px;
+}
+.tile .status-title {
+    font-size: 16px;
+}
+.tile .status-sub,
+.tile .status-chip {
+    display: none;
+}
+.tile .btn-tonal {
+    padding: 6px 12px;
+    font-size: 13px;
+}
+.tile-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 18px 8px 6px;
+    background: linear-gradient(to top, var(--scrim), transparent);
+}
+.tile-num {
+    min-width: 24px;
+    height: 22px;
+    padding: 0 5px;
+    border-radius: 4px;
+    display: grid;
+    place-items: center;
+    background: var(--accent);
+    color: #fff;
+    font: 700 14px/1 var(--font-display);
+}
+.tile-name {
+    flex: 1;
+    min-width: 0;
+    font: 700 15px/1 var(--font-display);
+    color: var(--focus);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.tile-btn {
+    height: 28px;
+    min-width: 28px;
+    padding: 0 6px;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    background: var(--on-video);
+    color: var(--focus);
+    font: 700 13px/1 var(--font-display);
+    flex: none;
+}
+.tile-btn.on {
+    background: var(--accent);
+}
+.tile-btn:hover,
+.tile-btn:focus-visible {
+    background: var(--focus-fill);
+    outline: 2px solid var(--focus);
+}
+.multi-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 6px 8px;
+    background: var(--bg);
+}
+.multi-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+    border: 2px solid transparent;
+}
+.multi-btn:hover,
+.multi-btn:focus-visible {
+    border-color: var(--focus);
+    outline: none;
+}
+
+/* ── Menús dentro de cada recuadro ─────────────────────────────────── */
+.multi-count {
+    margin-right: auto;
+    align-self: center;
+    font-size: 12px;
+    color: var(--text-mute);
+    font-variant-numeric: tabular-nums;
+}
+.tile-name {
+    font-size: 13px;
+}
+.tile-menu {
+    position: relative;
+    flex: none;
+}
+.tile-opt {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 0 8px 0 10px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+.menu {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 6px);
+    z-index: 6;
+    min-width: 128px;
+    max-height: 180px;
+    overflow-y: auto;
+    padding: 4px;
+    list-style: none;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+    animation: menu-in 0.12s ease-out;
+}
+.menu-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 5px;
+    border: 2px solid transparent;
+    color: var(--text);
+    font-size: 13px;
+    text-align: left;
+}
+.menu-item.on {
+    background: var(--container);
+    color: var(--on-container);
+}
+.menu-item:hover,
+.menu-item:focus-visible {
+    background: var(--focus-fill);
+    border-color: var(--focus);
+    outline: none;
+}
+@keyframes menu-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+}
+
+/* ── Selector de canal ─────────────────────────────────────────────── */
+.picker-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+    display: grid;
+    place-items: center;
+    background: rgba(0, 0, 0, 0.6);
+}
+.picker {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    background: var(--panel);
+    cursor: default;
+    z-index: 7;
+}
+.tile > .picker {
+    position: absolute;
+    inset: 0;
+}
+.picker-scrim > .picker {
+    width: min(420px, 92%);
+    height: min(520px, 86%);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+}
+.picker-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--text-dim);
+}
+.picker-search {
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background: var(--surface);
+    color: var(--text);
+    font: 400 13px var(--font-body);
+}
+.picker-search:focus {
+    outline: none;
+    border-color: var(--focus);
+    background: var(--surface-hi);
+}
+.picker-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    list-style: none;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+.picker-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 32px;
+    padding: 0 8px;
+    border-radius: 5px;
+    border: 2px solid transparent;
+    text-align: left;
+    color: var(--text);
+    font-size: 13px;
+}
+.picker-item.on {
+    background: var(--container);
+}
+.picker-item:hover,
+.picker-item:focus-visible {
+    background: var(--focus-fill);
+    border-color: var(--focus);
+    outline: none;
+}
+.picker-num {
+    min-width: 26px;
+    color: var(--text-mute);
+    font: 700 13px/1 var(--font-display);
+    font-variant-numeric: tabular-nums;
+}
+.picker-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.picker-opts {
+    font-size: 11px;
+    color: var(--text-mute);
+}
+.picker-none {
+    padding: 16px 8px;
+    color: var(--text-mute);
+    font-size: 13px;
+}
+
+/* ── Panel de canales: más fino, compacto u oculto (escritorio) ────── */
+.app.wide {
+    --panel-w: 300px;
+}
+.wide .brand-bar {
+    padding: 14px 14px 0;
+}
+.wide .brand {
+    font-size: 22px;
+}
+.brand-tools {
+    gap: 6px;
+}
+.wide .brand-count {
+    font-size: 12px;
+    margin-right: 4px;
+}
+.wide .multi-toggle {
+    height: 26px;
+    padding: 0 8px;
+    font-size: 12px;
+}
+.panel-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    background: var(--surface);
+    color: var(--text-dim);
+    border: 2px solid transparent;
+}
+.panel-btn.on {
+    background: var(--container);
+    color: var(--on-container);
+}
+.panel-btn:hover,
+.panel-btn:focus-visible {
+    border-color: var(--focus);
+    outline: none;
+}
+.wide .filters {
+    padding: 10px 10px 4px;
+    gap: 8px;
+}
+.wide .search {
+    height: 34px;
+    padding: 0 10px;
+}
+.wide .search input {
+    font-size: 13px;
+}
+.wide .tab {
+    height: 28px;
+    padding: 0 10px;
+}
+.wide .tab-label {
+    font-size: 13px;
+}
+.wide .tab-count {
+    font-size: 11px;
+}
+.wide .list {
+    padding: 4px 8px 16px;
+}
+.wide .section-title {
+    font-size: 12px;
+    padding: 10px 8px 4px;
+}
+.wide .row {
+    min-height: 44px;
+    gap: 9px;
+    padding: 0 6px;
+}
+.wide .row-num {
+    min-width: 26px;
+    height: 22px;
+    font-size: 14px;
+}
+.wide .logo-tile {
+    width: 32px;
+    height: 32px;
+    padding: 4px;
+}
+.wide .row-name {
+    font-size: 15px;
+}
+.wide .row-sub {
+    font-size: 11px;
+}
+.wide .hint {
+    padding: 8px 14px 10px;
+    font-size: 11px;
+}
+
+.app.panel-compact {
+    --panel-w: 190px;
+}
+.panel-compact .brand-count,
+.panel-compact .multi-toggle,
+.panel-compact .logo-tile,
+.panel-compact .row-sub,
+.panel-compact .hint {
+    display: none;
+}
+.panel-compact .row {
+    min-height: 28px;
+    margin-bottom: 0;
+}
+.panel-compact .row-name {
+    font-size: 13px;
+}
+.panel-compact .row-num {
+    min-width: 24px;
+    height: 20px;
+    font-size: 12px;
+}
+.panel-compact .section-title {
+    font-size: 11px;
+    padding: 8px 6px 2px;
+}
+.panel-compact .tab {
+    height: 24px;
+    padding: 0 8px;
+}
+.panel-compact .tab-label {
+    font-size: 12px;
+}
+.panel-compact .tab-count {
+    display: none;
+}
+.panel-compact .brand-bar {
+    padding: 10px 10px 0;
+}
+
+.app.panel-hidden {
+    --panel-w: 0px;
+}
+.panel-hidden .panel {
+    display: none;
+}
+.panel-open {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    z-index: 9;
+    width: 22px;
+    height: 56px;
+    transform: translateY(-50%);
+    display: grid;
+    place-items: center;
+    border-radius: 0 8px 8px 0;
+    background: var(--on-video);
+    color: var(--focus);
+    opacity: 0.55;
+    transition: opacity 0.15s;
+}
+.panel-open:hover,
+.panel-open:focus-visible {
+    opacity: 1;
+    background: var(--focus-fill);
+    outline: 2px solid var(--focus);
+}
+.is-fs .panel-open {
+    display: none;
+}
+@media (min-width: 820px) and (max-width: 1100px) {
+    .app.wide {
+        --panel-w: 270px;
+    }
+    .app.panel-compact {
+        --panel-w: 180px;
+    }
+    .app.panel-hidden {
+        --panel-w: 0px;
+    }
+}
+
+/* ── Escala general: controles, placas y textos más contenidos ─────── */
+.brand {
+    font-size: 22px;
+}
+.brand-xl {
+    font-size: 40px;
+}
+.ctrl {
+    border-width: 1.5px;
+}
+.ctrl-sm {
+    width: 34px;
+    height: 34px;
+}
+.ctrl-md {
+    width: 40px;
+    height: 40px;
+}
+.ctrl-lg {
+    width: 48px;
+    height: 48px;
+}
+.wide .ctrl-sm {
+    width: 36px;
+    height: 36px;
+}
+.wide .ctrl-md {
+    width: 42px;
+    height: 42px;
+}
+.wide .ctrl-lg {
+    width: 52px;
+    height: 52px;
+}
+.controls-center,
+.wide .controls-center {
+    gap: 14px;
+}
+.controls-util,
+.wide .controls-util {
+    gap: 8px;
+}
+.wide .controls-bottom,
+.is-fs .controls-bottom {
+    padding: 64px 24px 16px;
+}
+.controls-bottom {
+    padding: 44px 10px 8px;
+}
+.unmute-pill {
+    padding: 7px 14px;
+    font-size: 13px;
+}
+
+/* Opciones 1 2 3 */
+.seg-label {
+    font-size: 12px;
+}
+.seg {
+    min-width: 30px;
+    height: 26px;
+    font-size: 14px;
+}
+.seg-tv .seg-label {
+    font-size: 12px;
+}
+.seg-tv {
+    gap: 6px;
+}
+.seg-tv .seg,
+.controls-bottom .seg-tv .seg {
+    width: 34px;
+    height: 34px;
+    font-size: 16px;
+}
+
+/* Placas del canal */
+.plate {
+    height: 44px;
+}
+.plate-num {
+    min-width: 40px;
+    padding: 0 8px;
+    font-size: 22px;
+}
+.plate-logo {
+    width: 44px;
+    padding: 6px;
+}
+.plate-body {
+    padding: 0 14px 0 10px;
+}
+.plate-name {
+    font-size: 18px;
+}
+.plate-sub {
+    font-size: 12px;
+}
+.plate-live {
+    font-size: 13px;
+    padding: 0 10px;
+}
+.plate-sm .plate {
+    height: 30px;
+}
+.plate-sm .plate-num {
+    min-width: 28px;
+    font-size: 15px;
+}
+.plate-sm .plate-logo {
+    width: 30px;
+    padding: 3px;
+}
+.plate-sm .plate-name {
+    font-size: 14px;
+}
+.plate-sm .plate-live {
+    font-size: 12px;
+}
+.plate-osd .plate {
+    height: 62px;
+}
+.plate-osd .plate-num {
+    min-width: 72px;
+    padding: 0 12px;
+    font-size: 38px;
+}
+.plate-osd .plate-logo {
+    width: 62px;
+    padding: 8px;
+}
+.plate-osd .plate-body {
+    padding: 0 20px 0 14px;
+}
+.plate-osd .plate-name {
+    font-size: 26px;
+}
+.plate-osd .plate-sub {
+    font-size: 13px;
+}
+.plate-anchor,
+.osd {
+    top: 18px;
+    left: 24px;
+    right: 24px;
+}
+
+/* Estado de la señal */
+.status-icon {
+    width: 48px;
+    height: 48px;
+}
+.status-title {
+    font-size: 15px;
+}
+.wide .status-title {
+    font-size: 20px;
+}
+.status-sub,
+.wide .status-sub {
+    font-size: 13px;
+}
+.status-chip {
+    font-size: 11px;
+}
+.wide .quiet-spinner {
+    top: 20px;
+    right: 24px;
+    width: 34px;
+    height: 34px;
+}
+.btn-tonal {
+    padding: 7px 14px;
+    font-size: 13px;
+}
+
+/* Celular: "ahora suena" y favoritos */
+.now {
+    padding: 10px 14px;
+    gap: 10px;
+}
+.now-num {
+    min-width: 32px;
+    height: 32px;
+    font-size: 17px;
+}
+.now-title {
+    font-size: 17px;
+}
+.now-status {
+    font-size: 12px;
+}
+.fav-btn {
+    width: 34px;
+    height: 34px;
+}
+
+/* Buscador, pestañas y filas en celular */
+.search {
+    height: 38px;
+    padding: 0 12px;
+}
+.search input {
+    font-size: 14px;
+}
+.tab {
+    height: 30px;
+    padding: 0 11px;
+}
+.tab-label {
+    font-size: 13px;
+}
+.section-title {
+    font-size: 13px;
+    padding: 12px 8px 6px;
+}
+.row {
+    min-height: 48px;
+    gap: 10px;
+}
+.row-num {
+    min-width: 26px;
+    font-size: 14px;
+}
+.logo-tile {
+    width: 34px;
+    height: 34px;
+}
+.row-name {
+    font-size: 15px;
+}
+.row-sub {
+    font-size: 11px;
+}
+.multi-toggle,
+.multi-btn {
+    font-size: 12px;
+}
+.multi-btn {
+    height: 28px;
+    padding: 0 10px;
+}
+.tile-num {
+    min-width: 20px;
+    height: 20px;
+    font-size: 12px;
+}
+.tile-btn {
+    height: 26px;
+    min-width: 26px;
+}
+.toast {
+    font-size: 13px;
+}
+
+/* La lista de escritorio mantiene su escala propia, ya más fina */
+.wide .brand {
+    font-size: 20px;
+}
+
+/* Pestaña para volver a abrir la lista */
+.panel-open {
+    top: 50%;
+    left: 0;
+    width: 30px;
+    height: auto;
+    padding: 12px 0 10px;
+    flex-direction: column;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 0 10px 10px 0;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-left: 0;
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.5);
+    color: var(--text);
+    opacity: 1;
+}
+.panel-open-label {
+    writing-mode: vertical-rl;
+    rotate: 180deg;
+    font: 700 12px/1 var(--font-display);
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+}
+.panel-open:hover,
+.panel-open:focus-visible {
+    background: var(--focus-fill);
+    border-color: var(--focus);
+    outline: none;
+}
+.panel-open:hover .panel-open-label,
+.panel-open:focus-visible .panel-open-label {
+    color: var(--focus);
+}
+
+/* Marca arriba; debajo, las herramientas de la lista */
+.brand-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+}
+.brand-tools {
+    width: 100%;
+}
+.brand-tools .multi-toggle {
+    flex: 1;
+    justify-content: center;
+}
+.panel-compact .brand-tools .multi-toggle {
+    display: inline-flex;
+    flex: 1;
+}
+.panel-compact .multi-toggle {
+    font-size: 0;
+    gap: 0;
+    padding: 0;
+}
+
+/* Recuadro libre para agregar otro canal */
+.tile-empty {
+    border-radius: 6px;
+    color: var(--text-dim);
+    cursor: pointer;
+}
+.tile-empty strong {
+    font: 700 14px/1 var(--font-display);
+    color: var(--text);
+}
+.tile-empty span {
+    font-size: 12px;
+    color: var(--text-mute);
+}
+.tile-empty:hover,
+.tile-empty:focus-visible {
+    border-color: var(--focus);
+    background: var(--focus-fill);
+    outline: none;
+}
+
+.multi-key {
+    font: 700 11px/1 var(--font-body);
+    padding: 3px 5px;
+    border-radius: 4px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+}
+
+/* ── Panel de escritorio en zonas bien diferenciadas ───────────────── */
+.wide .panel {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+}
+/* Zona 1: marca y herramientas */
+.wide .brand-bar {
+    padding: 14px 12px 12px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+}
+/* Zona 2: buscador y categorías */
+.wide .filters {
+    padding: 10px 12px 6px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    gap: 8px;
+}
+.wide .search {
+    background: var(--bg);
+    border-color: var(--border);
+}
+.wide .search:focus-within {
+    border-color: var(--focus);
+}
+.wide .tab {
+    background: var(--bg);
+    border-color: var(--border);
+}
+.wide .tab.on {
+    background: var(--container);
+    border-color: var(--accent);
+}
+/* Zona 3: lista, con cada grupo como una banda propia */
+.wide .list {
+    padding: 0 8px 12px;
+    background: var(--panel);
+}
+.wide .section-title {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    margin: 0 -8px 4px;
+    padding: 7px 16px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    border-left: 3px solid var(--accent-soft);
+    color: var(--text-dim);
+    font-size: 12px;
+}
+.wide .section-title:not(:first-child) {
+    margin-top: 8px;
+    border-top: 1px solid var(--border);
+}
+.wide .row {
+    margin-bottom: 0;
+    border-radius: 6px;
+    box-shadow: inset 0 -1px 0 rgba(242, 245, 243, 0.06);
+}
+.wide .row.active {
+    box-shadow: inset 3px 0 0 var(--accent-soft);
+}
+.wide .row:hover,
+.wide .row:focus-visible {
+    box-shadow: none;
+}
+/* Zona 4: atajos de teclado como una barra al pie */
+.wide .hint {
+    margin-top: 0;
+    padding: 10px 12px;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 10px;
+}
+.wide .hint span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+.wide .hint kbd {
+    min-width: 22px;
+    text-align: center;
+    margin-right: 0;
+    box-shadow: 0 1px 0 var(--border);
+}
+.panel-compact .hint {
+    display: none;
+}
+
+/* Secciones plegables */
+.section-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-align: left;
+    color: inherit;
+    border-radius: 4px;
+}
+.section-toggle svg {
+    transition: rotate 0.15s;
+    flex: none;
+}
+.section-toggle.closed svg {
+    rotate: -90deg;
+}
+.section-name {
+    flex: 1;
+    min-width: 0;
+}
+.section-count {
+    font-size: 11px;
+    color: var(--text-mute);
+    font-variant-numeric: tabular-nums;
+}
+.section-toggle:hover,
+.section-toggle:focus-visible {
+    color: var(--focus);
+    outline: none;
+}
+.wide .section-title {
+    padding: 0;
+}
+.wide .section-toggle {
+    padding: 7px 12px 7px 10px;
+    border-radius: 0;
+}
+.wide .section-toggle:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+}
+
+/* ── Volumen: botón + deslizador que se despliega al acercar el cursor ── */
+.volume {
+    display: flex;
+    align-items: center;
+}
+.volume-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 0;
+    height: 4px;
+    margin: 0;
+    padding: 0;
+    opacity: 0;
+    border-radius: 2px;
+    background: linear-gradient(
+        to right,
+        var(--focus) var(--vol, 100%),
+        var(--on-video-line) var(--vol, 100%)
+    );
+    cursor: pointer;
+    transition: width 0.18s, opacity 0.18s, margin 0.18s;
+}
+.volume:hover .volume-slider,
+.volume:focus-within .volume-slider {
+    width: 84px;
+    margin: 0 8px 0 6px;
+    opacity: 1;
+}
+.volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--focus);
+    border: 0;
+}
+.volume-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--focus);
+    border: 0;
+}
+/* En pantallas táctiles el volumen lo manejan los botones del equipo */
+@media (hover: none) {
+    .volume-slider {
+        display: none;
+    }
+}
+
+/* Los embebidos web no se manejan: los controles son los de BuriTV */
+iframe.video {
+    pointer-events: none;
+}
+
+/* ── Chromecast: la señal va al TV; aquí el video queda en pausa ─────── */
+.cast-status {
+    z-index: 3;
+}
+.cast-status .status-icon {
+    color: var(--accent-soft);
+    background: var(--container);
+}

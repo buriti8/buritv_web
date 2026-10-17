@@ -1,0 +1,11 @@
+services:
+  buritv:
+    build: .
+    container_name: buritv
+    ports:
+      - "8090:8090"
+    restart: unless-stopped
+    environment:
+      # Para Chromecast: IP de tu PC en la red local (opcional)
+      RELAY_PUBLIC_HOST: 192.168.1.3
+      TZ: America/Bogota
