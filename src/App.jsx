@@ -8,6 +8,7 @@ import useDisplayStatus from './hooks/useDisplayStatus';
 import useSlowMode from './hooks/useSlowMode';
 import useZapping from './hooks/useZapping';
 import useCast from './hooks/useCast';
+import useNowPlaying from './hooks/useNowPlaying';
 import Player, { StatusOverlay } from './components/Player';
 import MultiView from './components/MultiView';
 import Controls from './components/Controls';
@@ -19,6 +20,7 @@ import ZapOSD from './components/ZapOSD';
 import Toast from './components/Toast';
 import Icon from './components/Icon';
 import { showToast } from './lib/toast';
+import { matchText } from './lib/matchText';
 
 // Máximo de canales a la vez en la vista múltiple
 const MULTI_MAX = 4;
@@ -99,7 +101,8 @@ export default function App() {
         loadM3U,
     } = useChannels();
     const { favorites, toggleFavorite } = useFavorites();
-    const filter = useChannelFilter(channels, favorites);
+    const nowPlaying = useNowPlaying();
+    const filter = useChannelFilter(channels, favorites, nowPlaying);
     const { slowMode, activations, reportStall, reportBandwidth } = useSlowMode();
 
     const cast = useCast({ source, channel: current, castable: source?.type !== 'web' });
@@ -584,13 +587,16 @@ export default function App() {
                                 <ChannelPlate
                                     number={currentIndex + 1}
                                     channel={current}
-                                    sub={count > 1 ? `Opción ${sourceIndex + 1} de ${count}` : null}
+                                    sub={
+                                        matchText(nowPlaying[current.id]) ??
+                                        (count > 1 ? `Opción ${sourceIndex + 1} de ${count}` : null)
+                                    }
                                     live={live}
                                 />
                             )}
                         </div>
                     )}
-                    <ZapOSD osd={osd} channels={channels} />
+                    <ZapOSD osd={osd} channels={channels} nowPlaying={nowPlaying} />
                     <Controls
                         visible={controlsVisible}
                         wide={wide}
@@ -748,6 +754,7 @@ export default function App() {
                                     index={row.index}
                                     active={multi ? multiTiles.some((t) => t.channel.id === row.ch.id) : row.ch.id === current?.id}
                                     favorite={favorites.has(row.ch.id)}
+                                    match={nowPlaying[row.ch.id]}
                                     onSelect={handleSelectChannel}
                                     onToggleFavorite={toggleRowFavorite}
                                 />

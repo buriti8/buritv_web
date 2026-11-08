@@ -39,6 +39,9 @@ export function embedUrl(raw, muted = false) {
     }
 }
 
+// Páginas que se negaron a funcionar a través de la retransmisión (por sesión).
+const directPages = new Set();
+
 // YouTube se silencia al instante por mensaje; el resto recarga con el parámetro "muted"
 const isYouTube = (url) => /(^|.)(youtube.com|youtu.be)$/.test(new URL(url, location.href).hostname);
 
@@ -60,7 +63,9 @@ export default function WebEmbed({
     const muted = mutedProp || needsGesture;
     // Páginas con reproductor propio: pasan por la retransmisión, que toma el
     // control de su audio (si no está encendida, se muestran tal cual).
-    const proxied = !yt && embedUrl(url) === url && relayAvailable();
+    // Las que solo funcionan en su propio dominio (redirigen si no) se cargan directas.
+    const [direct, setDirect] = useState(() => directPages.has(url));
+    const proxied = !direct && !yt && embedUrl(url) === url && relayAvailable();
     const proxySrc = useRef(null);
     if (!proxied) proxySrc.current = null;
     else if (!proxySrc.current) proxySrc.current = relayPageUrl(url, muted, volume);
@@ -73,6 +78,18 @@ export default function WebEmbed({
         const t = setTimeout(send, 1500);
         return () => clearTimeout(t);
     }, [proxied, muted, volume, allowed]);
+
+    useEffect(() => {
+        setDirect(directPages.has(url));
+        if (!proxied) return;
+        const onMsg = (e) => {
+            if (e.source !== frameRef.current?.contentWindow || e.data?.buritv !== 'leave') return;
+            directPages.add(url);
+            setDirect(true);
+        };
+        window.addEventListener('message', onMsg);
+        return () => window.removeEventListener('message', onMsg);
+    }, [url, proxied]);
 
     useEffect(() => {
         if (needsGesture) onAutoplayBlocked?.();

@@ -14,6 +14,7 @@ export default defineConfig({
         // En desarrollo, la lista de canales la atiende el relay (npm run relay)
         proxy: {
             '/m3u': 'http://localhost:8090',
+            '/now-playing': 'http://localhost:8090',
         },
     },
 });

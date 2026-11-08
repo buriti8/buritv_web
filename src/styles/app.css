@@ -226,6 +226,8 @@ p {
     color: var(--text-dim);
     margin-top: 2px;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .plate-sub.warn {
     color: var(--warning);
@@ -986,6 +988,25 @@ p {
 }
 .row.active .row-sub {
     color: var(--on-container);
+}
+/* Partido que está dando el canal (FotMob) */
+.row-match {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: var(--text-dim);
+}
+.row-match.soon {
+    color: var(--text-mute);
+}
+.row-match-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.wide .row-match {
+    font-size: 13px;
 }
 .row-fav {
     color: var(--favorite);

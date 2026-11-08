@@ -1,0 +1,19 @@
+{
+    "_comentario": "tvg-id de nuestra lista → nombres de canal en la guía de FotMob (https://www.fotmob.com/es-419/tv-guide/co). Se comparan sin tildes, mayúsculas ni espacios.",
+    "win-sports": ["Win Sports"],
+    "win-sports-plus": ["Win Fútbol +", "Win Sports +", "Win+ Fútbol"],
+    "espn": ["ESPN"],
+    "espn-2": ["ESPN 2"],
+    "espn-3": ["ESPN 3"],
+    "espn-4": ["ESPN 4"],
+    "espn-5": ["ESPN 5"],
+    "espn-6": ["ESPN 6"],
+    "espn-7": ["ESPN 7"],
+    "dsports": ["DSports", "DirecTV Sports"],
+    "dsports-2": ["DSports 2", "DirecTV Sports 2"],
+    "dsports-plus": ["DSports +", "DirecTV Sports +"],
+    "tyc-sports": ["TyC Sports Internacional", "TyC Sports"],
+    "fox-one": ["FOX One"],
+    "caracol": ["Caracol TV"],
+    "rcn": ["RCN TV"]
+}

@@ -40,6 +40,7 @@ export default function Filters({ filter, totalCount, searchRef }) {
                             onClick={() => setCategory(c.id)}
                         >
                             {c.fav && <Icon name="star" size={14} className="tab-star" />}
+                            {c.live && <span className="dot live" />}
                             <span className="tab-label">{c.label}</span>
                             <span className="tab-count">{c.count}</span>
                         </button>

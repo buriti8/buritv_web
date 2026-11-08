@@ -20,6 +20,7 @@
  *   GET /frame-check?url=<url>          → { embeddable } (¿se puede mostrar en un iframe?)
  *   GET /page?url=<url>&m=0|1&v=0-1     → la página con el audio bajo control de BuriTV
  *   GET /m3u                          → la lista de canales (desde Google Drive)
+ *   GET /now-playing                  → { updatedAt, channels: { <tvg-id>: partido } } (FotMob)
  *   GET /*                            → la web (carpeta dist), si existe
  *
  * Uso: docker compose up -d   (o npm run relay, con ffmpeg instalado)
@@ -32,6 +33,7 @@ import { createReadStream, existsSync, mkdirSync, readFileSync, rmSync, statSync
 import { fileURLToPath } from 'node:url';
 import { networkInterfaces, tmpdir } from 'node:os';
 import { extname, join, normalize } from 'node:path';
+import { getNowPlaying } from './nowPlaying.js';
 
 const PORT = Number(process.env.RELAY_PORT || 8090);
 // Sin pedidos durante este tiempo, el proceso de ffmpeg se detiene
@@ -348,7 +350,12 @@ function handleFrameCheck(req, res, url) {
 // Muchas fijan el reproductor en silencio y su botón de sonido queda fuera de
 // alcance. Se sirve la página con un script que toma el control del audio de
 // sus <video>/<audio> y obedece a BuriTV (postMessage {buritv:'audio'}).
-const AUDIO_SCRIPT = (muted, volume) => `<script>(function(){
+// Además, la página ve su propia ruta y parámetros (muchas eligen el canal con
+// ?id=… leyendo location.search) y, si intenta irse (p. ej. porque comprueba
+// location.hostname y redirige), avisa a BuriTV para cargarla directa.
+const AUDIO_SCRIPT = (muted, volume, href) => `<script>(function(){
+try{var t=new URL(${JSON.stringify(href).replace(/</g, '\\u003c')});history.replaceState(history.state,'',t.pathname+t.search+t.hash);}catch(e){}
+addEventListener('beforeunload',function(){try{parent.postMessage({buritv:'leave'},'*');}catch(e){}});
 var st={m:${muted ? 'true' : 'false'},v:${Number(volume) || 1}};
 var P=HTMLMediaElement.prototype;
 var dm=Object.getOwnPropertyDescriptor(P,'muted'),dv=Object.getOwnPropertyDescriptor(P,'volume');
@@ -389,7 +396,7 @@ function handlePage(req, res, url) {
                 r.on('data', (c) => chunks.push(c));
                 r.on('end', () => {
                     let html = Buffer.concat(chunks).toString('utf8');
-                    const inject = `<base href="${href}">${AUDIO_SCRIPT(muted, volume)}`;
+                    const inject = `<base href="${href}">${AUDIO_SCRIPT(muted, volume, href)}`;
                     html = /<head[^>]*>/i.test(html)
                         ? html.replace(/<head[^>]*>/i, (h) => h + inject)
                         : inject + html;
@@ -448,6 +455,10 @@ const server = http.createServer((req, res) => {
     if (url.pathname === '/frame-check') return handleFrameCheck(req, res, url);
     if (url.pathname === '/page') return handlePage(req, res, url);
     if (url.pathname === '/m3u') return handleM3u(req, res).catch(() => send(res, 500, ''));
+    if (url.pathname === '/now-playing')
+        return getNowPlaying()
+            .then((data) => send(res, 200, JSON.stringify(data), { 'Content-Type': 'application/json', 'Cache-Control': 'max-age=30' }))
+            .catch(() => json(res, 200, { updatedAt: Date.now(), channels: {} }));
     if (m) return handleFile(req, res, m[1], m[2]);
     if (handleStatic(req, res, url)) return;
     send(res, 404, 'no existe');

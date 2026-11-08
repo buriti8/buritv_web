@@ -8,6 +8,10 @@ export const M3U_URLS = ['./m3u', `${RELAY_URL}/m3u`];
 export const M3U_TIMEOUT_MS = 12000;
 export const M3U_RETRY_MS = [3000, 8000, 15000, 30000];
 
+// ── Qué partido está dando cada canal (FotMob, vía el relay) ─────────────
+export const NOW_PLAYING_URLS = ['./now-playing', `${RELAY_URL}/now-playing`];
+export const NOW_PLAYING_POLL_MS = 60000;
+
 
 // ── Diseño ───────────────────────────────────────────────────────────────
 // Por debajo de este ancho: diseño de celular; por encima: el de TV

@@ -1,12 +1,13 @@
 import { forwardRef, memo, useRef, useState } from 'react';
 import Icon from './Icon';
+import { matchText, matchTitle } from '../lib/matchText';
 
 /**
- * Fila de canal: número, logo, nombre y estado.
+ * Fila de canal: número, logo, nombre y estado (o el partido que está dando).
  * Favorito: mantener presionado (táctil) o clic derecho.
  */
 const ChannelRow = memo(
-    forwardRef(function ChannelRow({ item, index, active, favorite, onSelect, onToggleFavorite }, ref) {
+    forwardRef(function ChannelRow({ item, index, active, favorite, match, onSelect, onToggleFavorite }, ref) {
         const [logoError, setLogoError] = useState(false);
         const press = useRef({ timer: null, long: false });
         const count = item.sources.length;
@@ -49,7 +50,12 @@ const ChannelRow = memo(
                 </span>
                 <span className="row-body">
                     <span className="row-name">{item.name}</span>
-                    {(active || count > 1) && (
+                    {match ? (
+                        <span className={`row-sub row-match ${match.state}`} title={matchTitle(match)}>
+                            {match.state === 'live' && <span className="dot live" />}
+                            <span className="row-match-text">{matchText(match)}</span>
+                        </span>
+                    ) : (active || count > 1) && (
                         <span className="row-sub">{active ? 'Reproduciendo' : `${count} opciones`}</span>
                     )}
                 </span>
