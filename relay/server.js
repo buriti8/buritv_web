@@ -90,7 +90,15 @@ function startSession(id, src, video) {
         '-map', '0:v:0',
         '-map', '0:a:0?',
         ...(video === 'h264'
-            ? ['-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency', '-g', '50', '-sc_threshold', '0']
+            ? [
+                  // Desentrelazar solo los cuadros entrelazados (TV abierta en MPEG-2)
+                  '-vf', 'yadif=deint=interlaced',
+                  '-c:v', 'libx264', '-preset', 'faster', '-tune', 'zerolatency',
+                  // Calidad constante alta (23 por defecto perdía detalle en señales
+                  // SD ya pobres), con tope para no saturar conexiones lentas
+                  '-crf', '20', '-maxrate', '6M', '-bufsize', '12M',
+                  '-pix_fmt', 'yuv420p', '-g', '50', '-sc_threshold', '0',
+              ]
             : ['-c:v', 'copy']),
         '-c:a', 'aac', '-b:a', '128k', '-ac', '2',
         '-f', 'hls',
@@ -170,9 +178,13 @@ async function waitReady(res, id, s) {
 
 async function handleHls(req, res, url) {
     const src = url.searchParams.get('src');
-    const video = url.searchParams.get('video') === 'h264' ? 'h264' : 'copy';
+    let video = url.searchParams.get('video') === 'h264' ? 'h264' : 'copy';
     if (!src || !/^https?:\/\//i.test(src)) return json(res, 400, { error: 'src inválido' });
     if (!FFMPEG) return json(res, 503, { error: 'ffmpeg no está instalado' });
+    // "copy" solo sirve si el navegador decodifica ese video. Con MPEG-2/HEVC
+    // (TV abierta, TyC…) hls.js reproduce solo el audio, sin dar error, así que
+    // se convierte a H.264 aunque la web haya pedido copiarlo.
+    if (video === 'copy' && NON_BROWSER_VIDEO.has(await probeVideoCodec(src))) video = 'h264';
 
     const id = sessionId(src, video);
     let s = sessions.get(id);
@@ -215,6 +227,8 @@ function lanUrls() {
 // ¿El video ya es H.264? Chromecast no reproduce MPEG-2 (varias señales de TV
 // abierta lo traen). Sin ffprobe se asume que hay que convertirlo.
 const codecCache = new Map();
+// Videos que los navegadores no decodifican
+const NON_BROWSER_VIDEO = new Set(['mpeg2video', 'mpeg1video', 'hevc']);
 function probeVideoCodec(src) {
     if (codecCache.has(src)) return Promise.resolve(codecCache.get(src));
     const probe = FFMPEG ? FFMPEG.replace(/ffmpeg(\.exe)?$/i, 'ffprobe$1') : null;
@@ -229,7 +243,8 @@ function probeVideoCodec(src) {
         p.stdout.on('data', (d) => (out += d));
         p.on('error', () => resolve('unknown'));
         p.on('close', () => {
-            const codec = out.trim().split(/\s+/)[0] || 'unknown';
+            // La salida puede traer comas de más ("mpeg2video,") y repetirse por programa
+            const codec = out.trim().split(/[\s,]+/)[0] || 'unknown';
             if (codec !== 'unknown') codecCache.set(src, codec);
             resolve(codec);
         });
@@ -353,18 +368,48 @@ function handleFrameCheck(req, res, url) {
 // Además, la página ve su propia ruta y parámetros (muchas eligen el canal con
 // ?id=… leyendo location.search) y, si intenta irse (p. ej. porque comprueba
 // location.hostname y redirige), avisa a BuriTV para cargarla directa.
+//
+// Algunas comprueban location.hostname y se van si no es el suyo (p. ej. la
+// opción 2 de DSPORTS, con el código ofuscado y armado con Function). Como
+// location no se puede redefinir, se reescribe ese acceso por __buritvLoc
+// (con el dominio original) en sus scripts en línea y en el código que armen
+// con Function.
+//
+// Con Bitmovin (DSPORTS opciones 1 y 2) el audio se maneja con la API del
+// reproductor: arranca silenciado (así el autoplay nunca falla) y luego se
+// le quita el silencio. Forzar video.muted por debajo hacía fallar su
+// arranque (pantalla negra) o lo dejaba mudo.
+const LOC_RE = /\b(?:window\.|document\.)?location\.(hostname|host|origin)\b(?!\s*=[^=])/g;
+const fixLocation = (code) => code.replace(LOC_RE, '__buritvLoc.$1');
 const AUDIO_SCRIPT = (muted, volume, href) => `<script>(function(){
-try{var t=new URL(${JSON.stringify(href).replace(/</g, '\\u003c')});history.replaceState(history.state,'',t.pathname+t.search+t.hash);}catch(e){}
+var t;try{t=new URL(${JSON.stringify(href).replace(/</g, '\\u003c')});history.replaceState(history.state,'',t.pathname+t.search+t.hash);}catch(e){}
+window.__buritvLoc=t?{hostname:t.hostname,host:t.host,origin:t.origin}:location;
+var LR=${LOC_RE.toString()};
+function fix(c){return typeof c==='string'&&c.indexOf('location')!==-1?c.replace(LR,'__buritvLoc.$1'):c;}
+try{var OF=Function;var NF=function(){var a=[].slice.call(arguments);if(a.length)a[a.length-1]=fix(String(a[a.length-1]));return OF.apply(this,a);};
+NF.prototype=OF.prototype;Object.defineProperty(OF.prototype,'constructor',{value:NF,writable:true,configurable:true});window.Function=NF;}catch(e){}
 addEventListener('beforeunload',function(){try{parent.postMessage({buritv:'leave'},'*');}catch(e){}});
 var st={m:${muted ? 'true' : 'false'},v:${Number(volume) || 1}};
 var P=HTMLMediaElement.prototype;
 var dm=Object.getOwnPropertyDescriptor(P,'muted'),dv=Object.getOwnPropertyDescriptor(P,'volume');
-function apply(el){try{dm.set.call(el,st.m);dv.set.call(el,st.v);}catch(e){}}
-function all(){document.querySelectorAll('video,audio').forEach(apply);}
-try{Object.defineProperty(P,'muted',{get:function(){return dm.get.call(this);},set:function(){dm.set.call(this,st.m);},configurable:true});
-Object.defineProperty(P,'volume',{get:function(){return dv.get.call(this);},set:function(){dv.set.call(this,st.v);},configurable:true});}catch(e){}
-['play','playing','loadedmetadata','volumechange'].forEach(function(t){document.addEventListener(t,function(e){var el=e.target;if(el&&el.tagName&&/^(VIDEO|AUDIO)$/.test(el.tagName)&&(dm.get.call(el)!==st.m||dv.get.call(el)!==st.v))apply(el);},true);});
-setInterval(all,700);
+// ── Bitmovin ──
+var bms=[],bmLib,BM=false;
+function bmApply(p){try{if(st.m){p.mute();return;}p.setVolume(Math.round(st.v*100));if(p.isMuted()){p.unmute();
+setTimeout(function(){try{if(p.isPaused()&&!p.isMuted()){p.mute();p.play();}}catch(e){}},600);}}catch(e){}}
+function bmWrap(lib){try{var O=lib&&lib.player&&lib.player.Player;if(!O||O.__buritv)return;
+var W=function(el,cfg){BM=true;cfg=cfg||{};cfg.playback=Object.assign({},cfg.playback,{muted:true,autoplay:true});
+var p=new O(el,cfg);bms.push(p);var ev=lib.player.PlayerEvent||{};
+try{p.on(ev.Playing||'playing',function(){if(!p.__buritvOn){p.__buritvOn=1;bmApply(p);}});}catch(e){}
+return p;};W.prototype=O.prototype;W.__buritv=true;Object.keys(O).forEach(function(k){try{W[k]=O[k];}catch(e){}});
+lib.player.Player=W;}catch(e){}}
+try{Object.defineProperty(window,'bitmovin',{configurable:true,get:function(){bmWrap(bmLib);return bmLib;},set:function(v){bmLib=v;bmWrap(v);}});}catch(e){}
+// ── <video>/<audio> sueltos ──
+function apply(el){if(BM)return;try{dm.set.call(el,st.m);dv.set.call(el,st.v);}catch(e){}}
+function all(){if(BM){bms.forEach(bmApply);return;}document.querySelectorAll('video,audio').forEach(apply);}
+try{Object.defineProperty(P,'muted',{get:function(){return dm.get.call(this);},set:function(x){dm.set.call(this,BM?x:st.m);},configurable:true});
+Object.defineProperty(P,'volume',{get:function(){return dv.get.call(this);},set:function(x){dv.set.call(this,BM?x:st.v);},configurable:true});}catch(e){}
+['play','playing','loadedmetadata','volumechange'].forEach(function(t){document.addEventListener(t,function(e){var el=e.target;if(!BM&&el&&el.tagName&&/^(VIDEO|AUDIO)$/.test(el.tagName)&&(dm.get.call(el)!==st.m||dv.get.call(el)!==st.v))apply(el);},true);});
+setInterval(function(){if(!BM)all();},700);
 addEventListener('message',function(e){var d=e.data;if(d&&d.buritv==='audio'){st.m=!!d.muted;st.v=Math.min(1,Math.max(0,Number(d.volume)));all();}});
 })();</script>`;
 
@@ -396,7 +441,15 @@ function handlePage(req, res, url) {
                 r.on('data', (c) => chunks.push(c));
                 r.on('end', () => {
                     let html = Buffer.concat(chunks).toString('utf8');
-                    const inject = `<base href="${href}">${AUDIO_SCRIPT(muted, volume, href)}`;
+                    // Scripts en línea: que vean el dominio original
+                    html = html.replace(
+                        /(<script(?![^>]*\bsrc=)[^>]*>)([\s\S]*?)(<\/script>)/gi,
+                        (_, open, code, close) => open + fixLocation(code) + close,
+                    );
+                    // El script va antes del <base>: con el <base> ya puesto, history.replaceState
+                    // resolvía la ruta contra el otro dominio, fallaba y la página no veía su
+                    // ?id=… (DSPORTS opción 1 mostraba "Canal no disponible")
+                    const inject = `${AUDIO_SCRIPT(muted, volume, href)}<base href="${href}">`;
                     html = /<head[^>]*>/i.test(html)
                         ? html.replace(/<head[^>]*>/i, (h) => h + inject)
                         : inject + html;

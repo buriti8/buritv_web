@@ -7,6 +7,8 @@ import WebEmbed from './WebEmbed';
 
 // Errores HTTP de la lista: el servidor de esa opción no responde
 const isDeadHttp = (code) => code === 0 || code === 403 || code === 404 || code >= 500;
+// Reproduciendo sin imagen durante este tiempo → el video no se decodifica
+const NO_VIDEO_MS = 4000;
 
 /**
  * Reproduce la opción actual con el motor que decidió useStreamRecovery.
@@ -100,6 +102,9 @@ export default function Player({
                 maxBufferLength: slowMode ? 60 : 30,
                 maxMaxBufferLength: slowMode ? 90 : 60,
                 capLevelToPlayerSize: true,
+                // Arrancar suponiendo buena conexión (por defecto 500 kbps: empezaba
+                // en la peor calidad y tardaba en subir). Si no da, el ABR baja solo.
+                abrEwmaDefaultEstimate: slowMode ? 1000000 : 5000000,
                 manifestLoadingMaxRetry: 2,
                 levelLoadingMaxRetry: 4,
                 fragLoadingMaxRetry: 4,
@@ -151,7 +156,22 @@ export default function Player({
             return;
         }
 
-        const onTime = () => cb.current.onProgress?.(video.currentTime);
+        // Video que el navegador no decodifica (MPEG-2, HEVC): hls.js/mpegts lo
+        // descartan sin avisar y suena solo el audio. Si tras unos segundos
+        // avanzando no hay imagen, es un error de compatibilidad (→ H.264).
+        let noVideoTimer = null;
+        const checkVideo = () => {
+            if (noVideoTimer) return;
+            noVideoTimer = setTimeout(() => {
+                if (video.readyState >= 2 && !video.videoWidth) {
+                    report('error', { compat: true, relayVideo: 'h264', detail: 'sin imagen (solo audio)' });
+                }
+            }, NO_VIDEO_MS);
+        };
+        const onTime = () => {
+            checkVideo();
+            cb.current.onProgress?.(video.currentTime);
+        };
         const onPlay = () => cb.current.onPlaying?.();
         const onEnded = () => report('ended');
         const onError = () => {
@@ -167,6 +187,7 @@ export default function Player({
 
         return () => {
             destroyed = true;
+            clearTimeout(noVideoTimer);
             video.removeEventListener('timeupdate', onTime);
             video.removeEventListener('playing', onPlay);
             video.removeEventListener('ended', onEnded);

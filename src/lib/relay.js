@@ -11,6 +11,14 @@ export function relayAvailable() {
     return available === true;
 }
 
+/**
+ * Página en HTTPS y señal en HTTP: el navegador la bloquea (contenido mixto),
+ * así que solo se puede ver pasándola por la retransmisión.
+ */
+export function blockedAsMixed(url) {
+    return window.location.protocol === 'https:' && /^http:/i.test(url);
+}
+
 /** Revisa (una vez, y de nuevo cada minuto si estaba apagada) si responde. */
 export function checkRelay() {
     if (checking) return checking;

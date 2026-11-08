@@ -13,7 +13,7 @@ import {
     BITRATE_STEPS,
 } from '../config';
 import { cachedProbe, probe } from '../lib/tsProbe';
-import { relayAvailable, checkRelay } from '../lib/relay';
+import { relayAvailable, checkRelay, blockedAsMixed } from '../lib/relay';
 import { showToast } from '../lib/toast';
 
 /**
@@ -63,10 +63,13 @@ export default function useStreamRecovery({
     const probed = isStream ? cachedProbe(source.url) : null;
     const pref = isStream ? getEnginePref?.(source.url) : null;
     const defaultEngine = isStream && /\.m3u8?(\?|$)/i.test(source.url) ? 'hls' : 'ts';
+    // Señal HTTP en página HTTPS (p. ej. por el túnel): solo por la retransmisión
+    const mixed = isStream && blockedAsMixed(source.url);
 
     let engine = null;
     if (source) {
         if (source.type === 'web') engine = 'web';
+        else if (mixed && relayAvailable()) engine = 'relay';
         else if (engineOverride?.url === source.url) engine = engineOverride.engine;
         else if (probed?.needsRelay && relayAvailable()) engine = 'relay';
         else if (pref && (pref !== 'relay' || relayAvailable())) engine = pref;
@@ -100,6 +103,7 @@ export default function useStreamRecovery({
         selectSource,
         paused,
         engine,
+        relayVideo,
         onSourceWorking,
         rankSources,
         onSourceResult,
@@ -128,13 +132,18 @@ export default function useStreamRecovery({
 
     // ── Revisar los códecs de un enlace que nunca se revisó ─────────────
     useEffect(() => {
-        if (!isStream || probed || pref) {
+        if (!isStream || ((probed || pref) && !mixed)) {
             setProbing(false);
             return;
         }
         let cancelled = false;
         setProbing(true);
-        Promise.all([probe(source.url), checkRelay()]).then(([result]) => {
+        // Una señal bloqueada por contenido mixto no se puede revisar desde aquí:
+        // solo se espera a saber si la retransmisión está, para ir por ella
+        const job = mixed
+            ? checkRelay().then(() => null)
+            : Promise.all([probe(source.url), checkRelay()]).then(([r]) => r);
+        job.then((result) => {
             if (cancelled) return;
             setProbing(false);
             if (result?.needsRelay && !relayAvailable() && !noAudioWarned.current.has(source.url)) {
@@ -249,6 +258,16 @@ export default function useStreamRecovery({
                 schedule(150, () =>
                     setEngineOverride({ url: src.url, engine: 'relay', relayVideo: info.relayVideo }),
                 );
+                return;
+            }
+
+            // 0b) Ya va por la retransmisión copiando el video y el navegador no lo
+            //     decodifica (MPEG-2): pedirlo convertido a H.264. Pasa con las
+            //     señales que no se pudieron revisar antes (contenido mixto).
+            if (info.compat && eng === 'relay' && live.current.relayVideo !== 'h264') {
+                attempts.current = 0;
+                setStatus('reconnecting');
+                schedule(150, () => setEngineOverride({ url: src.url, engine: 'relay', relayVideo: 'h264' }));
                 return;
             }
 

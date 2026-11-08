@@ -3,7 +3,13 @@
 // así que la lista se pide al propio servidor de la web (/m3u, que atiende
 // el relay en Docker) y, de respaldo, a la retransmisión por su puerto.
 export const RELAY_PORT = 8090;
-export const RELAY_URL = `${window.location.protocol}//${window.location.hostname}:${RELAY_PORT}`;
+// En producción la web la sirve el propio relay: mismo origen (así funciona
+// también detrás de un túnel HTTPS, que no expone el puerto 8090). En
+// desarrollo (vite, puerto 5180) el relay está aparte en su puerto.
+const DEV_SERVER = window.location.port === '5180';
+export const RELAY_URL = DEV_SERVER
+    ? `${window.location.protocol}//${window.location.hostname}:${RELAY_PORT}`
+    : window.location.origin;
 export const M3U_URLS = ['./m3u', `${RELAY_URL}/m3u`];
 export const M3U_TIMEOUT_MS = 12000;
 export const M3U_RETRY_MS = [3000, 8000, 15000, 30000];
