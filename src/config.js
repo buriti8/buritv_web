@@ -18,6 +18,12 @@ export const M3U_RETRY_MS = [3000, 8000, 15000, 30000];
 export const NOW_PLAYING_URLS = ['./now-playing', `${RELAY_URL}/now-playing`];
 export const NOW_PLAYING_POLL_MS = 60000;
 
+// ── Programación de cada canal (guías XMLTV, vía el relay) ────────────────
+export const EPG_URLS = ['./epg', `${RELAY_URL}/epg`];
+export const EPG_POLL_MS = 15 * 60 * 1000;
+// Cada cuánto se recalcula "Ahora / Sigue" y la barra de progreso
+export const EPG_TICK_MS = 30000;
+
 
 // ── Diseño ───────────────────────────────────────────────────────────────
 // Por debajo de este ancho: diseño de celular; por encima: el de TV

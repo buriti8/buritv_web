@@ -1008,6 +1008,14 @@ p {
 .wide .row-match {
     font-size: 13px;
 }
+/* Programa al aire según la guía (cuando no hay partido) */
+.row-epg {
+    display: block;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 .row-fav {
     color: var(--favorite);
     display: grid;

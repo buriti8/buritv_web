@@ -1,0 +1,19 @@
+{
+    "_comentario": "tvg-id → canales del XML de open-epg, como \"fuente:canal\", en orden de preferencia. Las fuentes son los archivos de https://www.open-epg.com/files/<fuente>.xml",
+    "espn": ["colombia2:ESPN.co", "colombia1:ESPN.co"],
+    "espn-2": ["colombia2:ESPN 2.co", "colombia1:ESPN 2.co"],
+    "espn-3": ["colombia2:ESPN 3.co", "colombia1:ESPN 3.co"],
+    "espn-4": ["colombia2:ESPN 4.co", "colombia2:ESPN 4 HD.co"],
+    "espn-5": ["colombia2:ESPN 5.co", "colombia2:ESPN 5 HD.co"],
+    "espn-6": ["colombia2:ESPN 6 HD.co", "colombia2:ESPN 6.co"],
+    "espn-7": ["colombia2:ESPN 7 HD.co", "colombia2:ESPN 7.co", "venezuela1:ESPN 7.ve"],
+    "dsports": ["venezuela1:DSPORTS.ve", "venezuela1:DSPORTS HD.ve"],
+    "dsports-2": ["venezuela1:DSPORTS 2.ve", "venezuela1:DSPORTS 2 HD.ve"],
+    "dsports-plus": ["venezuela1:DSPORTS +.ve", "venezuela1:DSPORTS + HD.ve"],
+    "win-sports": ["colombia1:Win Sports.co", "colombia2:Win Sports.co"],
+    "win-sports-plus": ["colombia2:Win+Futbol.co"],
+    "caracol": ["colombia2:Caracol.co", "colombia1:Caracol.co"],
+    "rcn": ["colombia1:RCN.co", "colombia2:RCN.co"],
+    "tyc-sports": ["colombia1:TyC Sports HD.co", "argentina1:TYC SPORTS.ar"],
+    "adult-swin": ["colombia2:AdultSwim.co", "argentina1:Adult Swim.ar"]
+}

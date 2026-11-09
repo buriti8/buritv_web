@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 // Versión liviana: sin subtítulos, DRM ni pistas alternas (no se usan)
 import Hls from 'hls.js/light';
-import { relayHlsUrl } from '../lib/relay';
+import { relayAvailable, relayHlsUrl } from '../lib/relay';
 import Icon from './Icon';
 import WebEmbed from './WebEmbed';
 
@@ -9,6 +9,11 @@ import WebEmbed from './WebEmbed';
 const isDeadHttp = (code) => code === 0 || code === 403 || code === 404 || code >= 500;
 // Reproduciendo sin imagen durante este tiempo → el video no se decodifica
 const NO_VIDEO_MS = 4000;
+// Servidor más lento que la señal: si los últimos SLOW_FRAGS segmentos tardaron
+// en bajar en promedio más de SLOW_RATIO de lo que duran (y no hay calidad más
+// baja a la cual bajar), se pasa a la retransmisión, que los baja en paralelo.
+const SLOW_FRAGS = 4;
+const SLOW_RATIO = 0.85;
 
 /**
  * Reproduce la opción actual con el motor que decidió useStreamRecovery.
@@ -115,7 +120,21 @@ export default function Player({
                 if (cap) applyCap(hls, cap);
                 force((n) => n + 1);
             });
-            hls.on(Hls.Events.FRAG_LOADED, () => cb.current.onBandwidth?.(hls.bandwidthEstimate));
+            const loadRatios = [];
+            hls.on(Hls.Events.FRAG_LOADED, (e, data) => {
+                cb.current.onBandwidth?.(hls.bandwidthEstimate);
+                const frag = data?.frag;
+                const t = frag?.stats?.loading;
+                if (!frag?.duration || !t?.end || !t?.start) return;
+                loadRatios.push((t.end - t.start) / 1000 / frag.duration);
+                if (loadRatios.length > SLOW_FRAGS) loadRatios.shift();
+                const avg = loadRatios.reduce((a, b) => a + b, 0) / loadRatios.length;
+                const lowest = hls.levels.length <= 1 || hls.currentLevel === 0;
+                if (engine === 'hls' && loadRatios.length === SLOW_FRAGS && avg > SLOW_RATIO && lowest && relayAvailable()) {
+                    loadRatios.length = 0;
+                    report('error', { compat: true, detail: `servidor lento (${avg.toFixed(2)}x)` });
+                }
+            });
             hls.on(Hls.Events.ERROR, (e, data) => {
                 if (data.details === Hls.ErrorDetails.BUFFER_INCOMPATIBLE_CODECS_ERROR) {
                     report('error', { compat: true, detail: data.details });

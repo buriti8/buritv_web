@@ -21,6 +21,7 @@
  *   GET /page?url=<url>&m=0|1&v=0-1     → la página con el audio bajo control de BuriTV
  *   GET /m3u                          → la lista de canales (desde Google Drive)
  *   GET /now-playing                  → { updatedAt, channels: { <tvg-id>: partido } } (FotMob)
+ *   GET /epg                          → { updatedAt, channels: { <tvg-id>: [programas] } } (open-epg)
  *   GET /*                            → la web (carpeta dist), si existe
  *
  * Uso: docker compose up -d   (o npm run relay, con ffmpeg instalado)
@@ -34,6 +35,8 @@ import { fileURLToPath } from 'node:url';
 import { networkInterfaces, tmpdir } from 'node:os';
 import { extname, join, normalize } from 'node:path';
 import { getNowPlaying } from './nowPlaying.js';
+import { ensureFeed, handleFeed, stopFeed, stopIdleFeeds } from './prefetch.js';
+import { getEpg, warmEpg } from './epg.js';
 
 const PORT = Number(process.env.RELAY_PORT || 8090);
 // Sin pedidos durante este tiempo, el proceso de ffmpeg se detiene
@@ -80,13 +83,16 @@ function startSession(id, src, video) {
     mkdirSync(dir, { recursive: true });
 
     const isHls = /\.m3u8(\?|$)/i.test(src);
+    // HLS: ffmpeg lee la copia local que se baja en paralelo (prefetch.js), no el origen
+    const feed = isHls ? ensureFeed(src) : null;
+    const input = feed ? `http://127.0.0.1:${PORT}/p/${feed}/index.m3u8` : src;
     const args = [
         '-hide_banner',
         '-loglevel', 'fatal',
         '-fflags', '+genpts+discardcorrupt',
         // Reconexión automática si la señal TS directa se corta
         ...(isHls ? [] : ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5']),
-        '-i', src,
+        '-i', input,
         '-map', '0:v:0',
         '-map', '0:a:0?',
         ...(video === 'h264'
@@ -109,7 +115,7 @@ function startSession(id, src, video) {
         join(dir, 'index.m3u8'),
     ];
     const proc = spawn(FFMPEG, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-    const s = { proc, dir, src, lastAccess: Date.now(), dead: false };
+    const s = { proc, dir, src, feed, lastAccess: Date.now(), dead: false };
     proc.stderr.on('data', (d) => {
         const msg = String(d).trim();
         if (msg) console.log(`[${id}] ${msg.split('\n')[0]}`);
@@ -131,6 +137,8 @@ function stopSession(id) {
         s.proc.kill('SIGKILL');
     } catch {}
     setTimeout(() => rmSync(s.dir, { recursive: true, force: true }), 1500);
+    // La descarga anticipada se detiene si ninguna otra sesión usa la misma señal
+    if (s.feed && ![...sessions.values()].some((o) => o.feed === s.feed)) stopFeed(s.feed);
     console.log(`[${id}] detenida`);
 }
 
@@ -512,7 +520,14 @@ const server = http.createServer((req, res) => {
         return getNowPlaying()
             .then((data) => send(res, 200, JSON.stringify(data), { 'Content-Type': 'application/json', 'Cache-Control': 'max-age=30' }))
             .catch(() => json(res, 200, { updatedAt: Date.now(), channels: {} }));
+    if (url.pathname === '/epg')
+        return getEpg()
+            .then((data) => send(res, 200, JSON.stringify(data), { 'Content-Type': 'application/json', 'Cache-Control': 'max-age=300' }))
+            .catch(() => json(res, 200, { updatedAt: Date.now(), channels: {} }));
     if (m) return handleFile(req, res, m[1], m[2]);
+    if (url.pathname.startsWith('/p/')) return handleFeed(req, res, url)
+            .then((ok) => ok || send(res, 404, 'no existe'))
+            .catch(() => send(res, 500, ''));
     if (handleStatic(req, res, url)) return;
     send(res, 404, 'no existe');
 });
@@ -521,6 +536,7 @@ const server = http.createServer((req, res) => {
 setInterval(() => {
     const now = Date.now();
     for (const [id, s] of sessions) if (now - s.lastAccess > IDLE_MS) stopSession(id);
+    stopIdleFeeds(IDLE_MS);
 }, 10000);
 
 for (const sig of ['SIGINT', 'SIGTERM']) {
@@ -535,4 +551,5 @@ mkdirSync(WORK_DIR, { recursive: true });
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`BuriTV retransmisión en http://localhost:${PORT}`);
     console.log(FFMPEG ? `ffmpeg: ${FFMPEG}` : 'AVISO: no se encontró ffmpeg');
+    warmEpg();
 });

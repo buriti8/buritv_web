@@ -9,6 +9,7 @@ import useSlowMode from './hooks/useSlowMode';
 import useZapping from './hooks/useZapping';
 import useCast from './hooks/useCast';
 import useNowPlaying from './hooks/useNowPlaying';
+import useEpg from './hooks/useEpg';
 import Player, { StatusOverlay } from './components/Player';
 import MultiView from './components/MultiView';
 import Controls from './components/Controls';
@@ -21,6 +22,7 @@ import Toast from './components/Toast';
 import Icon from './components/Icon';
 import { showToast } from './lib/toast';
 import { matchText } from './lib/matchText';
+import { epgNowText } from './lib/epgText';
 
 // Máximo de canales a la vez en la vista múltiple
 const MULTI_MAX = 4;
@@ -102,6 +104,7 @@ export default function App() {
     } = useChannels();
     const { favorites, toggleFavorite } = useFavorites();
     const nowPlaying = useNowPlaying();
+    const epg = useEpg();
     const filter = useChannelFilter(channels, favorites, nowPlaying);
     const { slowMode, activations, reportStall, reportBandwidth } = useSlowMode();
 
@@ -589,6 +592,7 @@ export default function App() {
                                     channel={current}
                                     sub={
                                         matchText(nowPlaying[current.id]) ??
+                                        epgNowText(epg[current.id]) ??
                                         (count > 1 ? `Opción ${sourceIndex + 1} de ${count}` : null)
                                     }
                                     live={live}
@@ -596,7 +600,7 @@ export default function App() {
                             )}
                         </div>
                     )}
-                    <ZapOSD osd={osd} channels={channels} nowPlaying={nowPlaying} />
+                    <ZapOSD osd={osd} channels={channels} nowPlaying={nowPlaying} epg={epg} />
                     <Controls
                         visible={controlsVisible}
                         wide={wide}
@@ -755,6 +759,7 @@ export default function App() {
                                     active={multi ? multiTiles.some((t) => t.channel.id === row.ch.id) : row.ch.id === current?.id}
                                     favorite={favorites.has(row.ch.id)}
                                     match={nowPlaying[row.ch.id]}
+                                    epg={epg[row.ch.id]}
                                     onSelect={handleSelectChannel}
                                     onToggleFavorite={toggleRowFavorite}
                                 />

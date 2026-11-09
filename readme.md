@@ -41,3 +41,17 @@ La equivalencia entre nuestros canales y los nombres de FotMob está en
 `relay/channel-map.json` (`tvg-id` → nombres en FotMob). Los canales de FotMob
 sin equivalencia salen en `docker compose logs`. Después de editar ese archivo
 hay que reconstruir la imagen (`docker compose up -d --build`).
+
+## Programación de cada canal (Ahora / Sigue)
+
+Cuando un canal no está dando un partido, la lista muestra el programa al aire
+(pasando el cursor, su horario y el que sigue), y al cambiar de canal se ve
+también el que sigue. Los
+datos son guías XMLTV gratuitas de [open-epg.com](https://www.open-epg.com),
+que el relay descarga al arrancar y cada 6 horas, y sirve en `/epg`.
+
+Las fuentes y la equivalencia de canales están en `relay/epg-map.json`
+(`tvg-id` → `"fuente:canal del XML"`, en orden de preferencia). DSports usa la
+guía de Venezuela porque las de Colombia no la traen. Los canales sin
+programación salen en `docker compose logs`. Después de editarlo hay que
+reconstruir la imagen.
