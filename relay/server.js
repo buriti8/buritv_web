@@ -346,6 +346,20 @@ async function handleM3u(req, res) {
     send(res, 502, 'No se pudo descargar la lista');
 }
 
+// Cabeceras de un navegador cargando la página dentro de un iframe. Algunas
+// páginas (p. ej. la opción 1 de TNT SPORTS, la18hd) responden 403 vacío si
+// falta Sec-Fetch-Dest, y en BuriTV quedaba la pantalla en blanco.
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+const IFRAME_HEADERS = {
+    'User-Agent': BROWSER_UA,
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'es-ES,es;q=0.9',
+    'Sec-Fetch-Dest': 'iframe',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'cross-site',
+    'Upgrade-Insecure-Requests': '1',
+};
+
 // ¿La página permite mostrarse dentro de un iframe? (X-Frame-Options / CSP)
 const frameCache = new Map();
 function handleFrameCheck(req, res, url) {
@@ -353,7 +367,7 @@ function handleFrameCheck(req, res, url) {
     if (!target || !/^https?:\/\//i.test(target)) return json(res, 400, { error: 'url inválida' });
     if (frameCache.has(target)) return json(res, 200, frameCache.get(target));
     const mod = target.startsWith('https') ? https : http;
-    const r = mod.get(target, { timeout: 8000, headers: { 'User-Agent': 'Mozilla/5.0' } }, (up) => {
+    const r = mod.get(target, { timeout: 8000, headers: IFRAME_HEADERS }, (up) => {
         up.resume();
         const xfo = String(up.headers['x-frame-options'] || '').toLowerCase();
         const csp = String(up.headers['content-security-policy'] || '').toLowerCase();
@@ -418,14 +432,161 @@ try{Object.defineProperty(P,'muted',{get:function(){return dm.get.call(this);},s
 Object.defineProperty(P,'volume',{get:function(){return dv.get.call(this);},set:function(x){dv.set.call(this,BM?x:st.v);},configurable:true});}catch(e){}
 ['play','playing','loadedmetadata','volumechange'].forEach(function(t){document.addEventListener(t,function(e){var el=e.target;if(!BM&&el&&el.tagName&&/^(VIDEO|AUDIO)$/.test(el.tagName)&&(dm.get.call(el)!==st.m||dv.get.call(el)!==st.v))apply(el);},true);});
 setInterval(function(){if(!BM)all();},700);
-addEventListener('message',function(e){var d=e.data;if(d&&d.buritv==='audio'){st.m=!!d.muted;st.v=Math.min(1,Math.max(0,Number(d.volume)));all();}});
+addEventListener('message',function(e){var d=e.data;if(d&&d.buritv==='audio'){st.m=!!d.muted;st.v=Math.min(1,Math.max(0,Number(d.volume)));all();
+if(e.source===parent)for(var i=0;i<frames.length;i++)try{frames[i].postMessage(d,'*');}catch(x){}}});
 })();</script>`;
+
+// Reproductor anidado servido por la retransmisión (ver needsOwnReferer): sus
+// pedidos de red (lista, segmentos, token…) salen por /fwd, que los hace con
+// su dominio como Origin/Referer. La página sigue viendo las direcciones
+// originales (responseURL / Response.url), así las rutas relativas de la
+// lista HLS se resuelven bien. document.referrer es la página que lo envolvía.
+const NET_SCRIPT = (origin, referrer) => `<script>(function(){
+var O=${JSON.stringify(origin).replace(/</g, '\\u003c')},RF=${JSON.stringify(referrer).replace(/</g, '\\u003c')},RL=location.origin;
+try{Object.defineProperty(Document.prototype,'referrer',{get:function(){return RF;},configurable:true});}catch(e){}
+function abs(u){try{return new URL(String(u),document.baseURI);}catch(e){return null;}}
+function wrap(a){return a&&/^https?:$/.test(a.protocol)&&a.origin!==RL?RL+'/fwd?o='+encodeURIComponent(O)+'&url='+encodeURIComponent(a.href):null;}
+var X=XMLHttpRequest.prototype,XO=X.open,RU=Object.getOwnPropertyDescriptor(X,'responseURL');
+X.open=function(m,u){var a=abs(u),w=wrap(a);this.__bu=w?a.href:null;if(w)arguments[1]=w;return XO.apply(this,arguments);};
+try{Object.defineProperty(X,'responseURL',{get:function(){return this.__bu||RU.get.call(this);},configurable:true});}catch(e){}
+var F=window.fetch;if(F)window.fetch=function(i,o){var isReq=typeof Request!=='undefined'&&i instanceof Request;var a=abs(isReq?i.url:i),w=wrap(a);
+if(!w)return F.apply(this,arguments);var p=isReq?F.call(this,new Request(w,i),o):F.call(this,w,o);
+return p.then(function(r){try{Object.defineProperty(r,'url',{value:a.href});}catch(e){}return r;});};
+})();</script>`;
+
+// Algunas páginas solo envuelven el reproductor de otro dominio, y ese
+// reproductor exige que lo pida la página original (Referer). Pasada por la
+// retransmisión, el navegador lo pide desde aquí y se niega (la opción 2 de
+// TYC SPORTS: dembed.st respondía "Not allowed to stream"). Cargada directa
+// se veía, pero arrancaba sin sonido y su botón quedaba fuera de alcance.
+// Así que ese reproductor también se sirve desde aquí (pedido con la página
+// original como Referer), con el control del audio y con su red por /fwd: su
+// señal solo acepta su propio dominio como Origin.
+// Se prueba el reproductor anidado con los dos Referer y se recuerda.
+const ownRefCache = new Map(); // url del iframe → ¿exige la página original?
+function statusWithReferer(target, referer) {
+    return new Promise((resolve) => {
+        const mod = target.protocol === 'https:' ? https : http;
+        const r = mod.get(target, { timeout: 6000, headers: { ...IFRAME_HEADERS, Referer: referer } }, (up) => {
+            resolve(up.statusCode);
+            up.destroy();
+        });
+        r.on('timeout', () => r.destroy());
+        r.on('error', () => resolve(0));
+    });
+}
+async function needsOwnReferer(html, href, req) {
+    const page = new URL(href);
+    const relayRef = `http://${req.headers.host || 'localhost'}/`;
+    const frames = [...html.matchAll(/<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)]
+        .map((m) => {
+            try {
+                return { raw: m[1], f: new URL(m[1].replace(/&amp;/g, '&'), href) };
+            } catch {
+                return null;
+            }
+        })
+        .filter((x) => x && /^https?:$/.test(x.f.protocol) && x.f.host !== page.host)
+        .slice(0, 3);
+    const checks = frames.map(async ({ f }) => {
+        const key = f.toString();
+        if (!ownRefCache.has(key)) {
+            const [own, relay] = await Promise.all([
+                statusWithReferer(f, `${page.origin}/`),
+                statusWithReferer(f, relayRef),
+            ]);
+            // Solo si con la página original responde y desde aquí se niega
+            const result = own >= 200 && own < 400 && (relay === 401 || relay === 403);
+            if (!own || !relay) return result; // sin respuesta: no se recuerda
+            ownRefCache.set(key, result);
+        }
+        return ownRefCache.get(key);
+    });
+    const results = await Promise.all(checks);
+    return frames.filter((_, i) => results[i]); // [{ raw, f }]
+}
+
+// Pedidos de red de un reproductor anidado, hechos con su dominio (o=origen)
+function handleFwd(req, res, url) {
+    const target = url.searchParams.get('url');
+    const origin = url.searchParams.get('o');
+    const corsH = {
+        'Access-Control-Allow-Origin': req.headers.origin || '*',
+        'Access-Control-Allow-Credentials': 'true',
+        'Access-Control-Expose-Headers': '*',
+        Vary: 'Origin',
+    };
+    if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+            ...corsH,
+            'Access-Control-Allow-Methods': 'GET, POST, HEAD, OPTIONS',
+            'Access-Control-Allow-Headers': req.headers['access-control-request-headers'] || '*',
+            'Access-Control-Max-Age': '600',
+            'Access-Control-Allow-Private-Network': 'true',
+        });
+        return res.end();
+    }
+    if (!target || !/^https?:\/\//i.test(target) || !origin || !/^https?:\/\//i.test(origin)) {
+        res.writeHead(400, corsH);
+        return res.end();
+    }
+    const body = [];
+    req.on('data', (c) => body.push(c));
+    req.on('end', () => {
+        const payload = Buffer.concat(body);
+        const go = (href, hops) => {
+            let u;
+            try {
+                u = new URL(href);
+            } catch {
+                res.writeHead(400, corsH);
+                return res.end();
+            }
+            const headers = {
+                'User-Agent': BROWSER_UA,
+                Accept: req.headers.accept || '*/*',
+                'Accept-Language': 'es-ES,es;q=0.9',
+                'Accept-Encoding': 'identity',
+                Origin: origin,
+                Referer: `${origin}/`,
+                'Sec-Fetch-Site': 'cross-site',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Dest': 'empty',
+            };
+            for (const h of ['content-type', 'range']) if (req.headers[h]) headers[h] = req.headers[h];
+            if (payload.length) headers['Content-Length'] = payload.length;
+            const mod = u.protocol === 'https:' ? https : http;
+            const up = mod.request(href, { method: req.method, headers, timeout: 15000 }, (r) => {
+                if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location && hops < 4) {
+                    r.resume();
+                    return go(new URL(r.headers.location, href).toString(), hops + 1);
+                }
+                const out = { ...corsH };
+                for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control'])
+                    if (r.headers[h]) out[h] = r.headers[h];
+                res.writeHead(r.statusCode || 502, out);
+                r.pipe(res);
+            });
+            up.on('timeout', () => up.destroy());
+            up.on('error', () => {
+                if (!res.headersSent) res.writeHead(502, corsH);
+                res.end();
+            });
+            up.end(payload.length ? payload : undefined);
+        };
+        go(target, 0);
+    });
+}
 
 function handlePage(req, res, url) {
     const target = url.searchParams.get('url');
     if (!target || !/^https?:\/\//i.test(target)) return json(res, 400, { error: 'url inválida' });
     const muted = url.searchParams.get('m') !== '0';
     const volume = url.searchParams.get('v') ?? '1';
+    // Reproductor anidado: la página que lo envolvía (se pide con ella como Referer)
+    const ref = url.searchParams.get('ref');
+    const nested = !!ref && /^https?:\/\//i.test(ref);
+    const relayOrigin = `${String(req.headers['x-forwarded-proto'] || 'http').split(',')[0]}://${req.headers.host}`;
     const fetchPage = (href, hops) => {
         const u = new URL(href);
         const mod = u.protocol === 'https:' ? https : http;
@@ -434,10 +595,9 @@ function handlePage(req, res, url) {
             {
                 timeout: 12000,
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
-                    Referer: `${u.origin}/`,
+                    ...IFRAME_HEADERS,
+                    Referer: nested ? ref : `${u.origin}/`,
                     'Accept-Encoding': 'identity',
-                    'Accept-Language': 'es-ES,es;q=0.9',
                 },
             },
             (r) => {
@@ -447,17 +607,29 @@ function handlePage(req, res, url) {
                 }
                 const chunks = [];
                 r.on('data', (c) => chunks.push(c));
-                r.on('end', () => {
+                r.on('end', async () => {
                     let html = Buffer.concat(chunks).toString('utf8');
+                    // Reproductores anidados que solo aceptan la página original: también desde aquí
+                    if (!nested) {
+                        for (const { raw, f } of await needsOwnReferer(html, href, req)) {
+                            const src = `${relayOrigin}/page?url=${encodeURIComponent(f.toString())}&ref=${encodeURIComponent(`${new URL(href).origin}/`)}&m=${muted ? 1 : 0}&v=${volume}`;
+                            html = html.split(`"${raw}"`).join(`"${src}"`).split(`'${raw}'`).join(`'${src}'`);
+                        }
+                    }
                     // Scripts en línea: que vean el dominio original
                     html = html.replace(
                         /(<script(?![^>]*\bsrc=)[^>]*>)([\s\S]*?)(<\/script>)/gi,
                         (_, open, code, close) => open + fixLocation(code) + close,
                     );
+                    // Reproductores configurados para esperar un clic (TNT SPORTS opción 1,
+                    // Clappr con "autoPlay":false): en BuriTV ya se eligió el canal, que arranquen
+                    html = html.replace(/(<script(?![^>]*\bsrc=)[^>]*>)([\s\S]*?)(<\/script>)/gi, (_, open, code, close) =>
+                        open + code.replace(/(["']?autoPlay["']?\s*:\s*)false\b/g, '$1true') + close,
+                    );
                     // El script va antes del <base>: con el <base> ya puesto, history.replaceState
                     // resolvía la ruta contra el otro dominio, fallaba y la página no veía su
                     // ?id=… (DSPORTS opción 1 mostraba "Canal no disponible")
-                    const inject = `${AUDIO_SCRIPT(muted, volume, href)}<base href="${href}">`;
+                    const inject = `${nested ? NET_SCRIPT(new URL(href).origin, ref) : ''}${AUDIO_SCRIPT(muted, volume, href)}<base href="${href}">`;
                     html = /<head[^>]*>/i.test(html)
                         ? html.replace(/<head[^>]*>/i, (h) => h + inject)
                         : inject + html;
@@ -507,8 +679,9 @@ function handleStatic(req, res, url) {
 }
 
 const server = http.createServer((req, res) => {
-    if (req.method === 'OPTIONS') return send(res, 204, '');
     const url = new URL(req.url, `http://${req.headers.host}`);
+    if (url.pathname === '/fwd') return handleFwd(req, res, url);
+    if (req.method === 'OPTIONS') return send(res, 204, '');
     const m = url.pathname.match(/^\/s\/([a-f0-9]{16})\/([^/]+)$/);
     if (url.pathname === '/health') return json(res, 200, { ok: true, ffmpeg: !!FFMPEG, lan: lanUrls() });
     if (url.pathname === '/cast') return handleCast(req, res, url).catch(() => json(res, 500, {}));
