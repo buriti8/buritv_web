@@ -402,12 +402,18 @@ function handleFrameCheck(req, res, url) {
 // le quita el silencio. Forzar video.muted por debajo hacía fallar su
 // arranque (pantalla negra) o lo dejaba mudo.
 const LOC_RE = /\b(?:window\.|document\.)?location\.(hostname|host|origin)\b(?!\s*=[^=])/g;
-const fixLocation = (code) => code.replace(LOC_RE, '__buritvLoc.$1');
+// location["hostname"] / location[variable] (DSPORTS 2 opción 2, sudamericaplay:
+// arma con Function `if (location[a[0]] !== a[1]) location.replace(google)`):
+// pasa por __buritvL, que da el dominio original y deja el resto al location real.
+const LOC_BRACKET_RE = /(^|[^.\w$])(?:window\.|document\.)?location\[/g;
+const fixLocation = (code) => code.replace(LOC_RE, '__buritvLoc.$1').replace(LOC_BRACKET_RE, '$1__buritvL[');
 const AUDIO_SCRIPT = (muted, volume, href) => `<script>(function(){
 var t;try{t=new URL(${JSON.stringify(href).replace(/</g, '\\u003c')});history.replaceState(history.state,'',t.pathname+t.search+t.hash);}catch(e){}
 window.__buritvLoc=t?{hostname:t.hostname,host:t.host,origin:t.origin}:location;
-var LR=${LOC_RE.toString()};
-function fix(c){return typeof c==='string'&&c.indexOf('location')!==-1?c.replace(LR,'__buritvLoc.$1'):c;}
+try{window.__buritvL=new Proxy({},{get:function(o,k){if(k==='hostname'||k==='host'||k==='origin')return __buritvLoc[k];var v=location[k];return typeof v==='function'?v.bind(location):v;},
+set:function(o,k,v){location[k]=v;return true;}});}catch(e){window.__buritvL=location;}
+var LR=${LOC_RE.toString()},LB=${LOC_BRACKET_RE.toString()};
+function fix(c){return typeof c==='string'&&c.indexOf('location')!==-1?c.replace(LR,'__buritvLoc.$1').replace(LB,'$1__buritvL['):c;}
 try{var OF=Function;var NF=function(){var a=[].slice.call(arguments);if(a.length)a[a.length-1]=fix(String(a[a.length-1]));return OF.apply(this,a);};
 NF.prototype=OF.prototype;Object.defineProperty(OF.prototype,'constructor',{value:NF,writable:true,configurable:true});window.Function=NF;}catch(e){}
 addEventListener('beforeunload',function(){try{parent.postMessage({buritv:'leave'},'*');}catch(e){}});
@@ -435,6 +441,35 @@ setInterval(function(){if(!BM)all();},700);
 addEventListener('message',function(e){var d=e.data;if(d&&d.buritv==='audio'){st.m=!!d.muted;st.v=Math.min(1,Math.max(0,Number(d.volume)));all();
 if(e.source===parent)for(var i=0;i<frames.length;i++)try{frames[i].postMessage(d,'*');}catch(x){}}});
 })();</script>`;
+
+// Publicidad de las páginas con reproductor propio (igual que en la app móvil):
+//  - aclib (en TYC SPORTS opción 3 abría un anuncio gigante encima del video):
+//    su cargador en línea (window['…']='…', ~650 KB) y sus llamadas se quitan,
+//    y por si llega de otra forma, queda sin efecto (todo lo que le pidan no hace nada).
+//  - Scripts externos con data-cfasync="false" vacíos: popunders.
+//  - window.open: sin ventanas emergentes.
+// Y que no arranquen silenciados (JW Player de dembed.st: "start_muted":true).
+// Solo se quitan los scripts que son únicamente publicidad: el que llama a
+// aclib.runPop({...}) y nada más, y su cargador. Quitar cualquiera que
+// nombrara aclib borraba el reproductor de streamxhd (DSPORTS 2 y DSPORTS +
+// opción 1), que la menciona dentro de su código.
+// También la etiqueta de anuncios por zona: s.dataset.zone='…', s.src='…/tag.min.js'.
+const AD_ONLY_SCRIPT =
+    /^\s*(aclib\.\w+\(\s*\{[^{}]*\}\s*\);?\s*)+$|^\s*window\[['"][A-Za-z0-9]{10,}['"]\]\s*=\s*['"]|^[^\n]{0,400}dataset\.zone\s*=[^\n]{0,200}tag\.min\.js[^\n]{0,200}$/;
+// Detectores de "iframe con sandbox" (quitan la publicidad así): si sospechan,
+// mandan a /block.html. En BuriTV daban falsos positivos (p. ej. con el objeto
+// PDF de prueba) y la página se iba (DSPORTS 2 opción 2 quedaba sin sonido).
+const SANDBOX_CHECK = /sandbox[\s\S]*block\.html|block\.html[\s\S]*sandbox/;
+const cleanPlayerHtml = (html) =>
+    html
+        .replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gi, (all, code) =>
+            AD_ONLY_SCRIPT.test(code) || (code.length < 6000 && SANDBOX_CHECK.test(code)) ? '' : all,
+        )
+        .replace(/<script\b[^>]*data-cfasync=["']false["'][^>]*>\s*<\/script>/gi, '')
+        .replace(/(["']start_muted["']\s*:\s*)true/g, '$1false');
+const NO_POPUPS_SCRIPT = `<script>(function(){window.open=function(){return null;};
+try{var n=new Proxy(function(){},{get:function(){return n;},apply:function(){return n;}});
+Object.defineProperty(window,'aclib',{get:function(){return n;},set:function(){},configurable:false});}catch(e){}})();</script>`;
 
 // Reproductor anidado servido por la retransmisión (ver needsOwnReferer): sus
 // pedidos de red (lista, segmentos, token…) salen por /fwd, que los hace con
@@ -478,32 +513,42 @@ function statusWithReferer(target, referer) {
 async function needsOwnReferer(html, href, req) {
     const page = new URL(href);
     const relayRef = `http://${req.headers.host || 'localhost'}/`;
-    const frames = [...html.matchAll(/<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)]
+    const frames = [...html.matchAll(/<iframe\b([^>]*)\bsrc\s*=\s*["']([^"']+)["']([^>]*)>/gi)]
         .map((m) => {
             try {
-                return { raw: m[1], f: new URL(m[1].replace(/&amp;/g, '&'), href) };
+                return {
+                    raw: m[2],
+                    f: new URL(m[2].replace(/&amp;/g, '&'), href),
+                    fs: /allowfullscreen/i.test(m[1] + m[3]),
+                };
             } catch {
                 return null;
             }
         })
         .filter((x) => x && /^https?:$/.test(x.f.protocol) && x.f.host !== page.host)
         .slice(0, 3);
-    const checks = frames.map(async ({ f }) => {
+    // Un único iframe de otro dominio con pantalla completa: es el reproductor
+    // y la página solo lo envuelve. dembed.st (TYC SPORTS opción 3) dejó de
+    // exigir el Referer, pero igual conviene servirlo desde aquí: así se le
+    // quita la publicidad y que arranque en silencio (ver cleanPlayerHtml).
+    const onlyPlayer = frames.filter((x) => x.fs).length === 1;
+    const checks = frames.map(async ({ f, fs }) => {
         const key = f.toString();
         if (!ownRefCache.has(key)) {
             const [own, relay] = await Promise.all([
                 statusWithReferer(f, `${page.origin}/`),
                 statusWithReferer(f, relayRef),
             ]);
-            // Solo si con la página original responde y desde aquí se niega
-            const result = own >= 200 && own < 400 && (relay === 401 || relay === 403);
+            // Con la página original responde, y desde aquí se niega o es el único reproductor
+            const result = own >= 200 && own < 400 && (relay === 401 || relay === 403 || (onlyPlayer && fs));
             if (!own || !relay) return result; // sin respuesta: no se recuerda
             ownRefCache.set(key, result);
         }
         return ownRefCache.get(key);
     });
     const results = await Promise.all(checks);
-    return frames.filter((_, i) => results[i]); // [{ raw, f }]
+    // [{ raw, f, sole }] (sole: es el único reproductor de la página)
+    return frames.filter((_, i) => results[i]).map((x) => ({ ...x, sole: onlyPlayer && x.fs }));
 }
 
 // Pedidos de red de un reproductor anidado, hechos con su dominio (o=origen)
@@ -611,11 +656,27 @@ function handlePage(req, res, url) {
                     let html = Buffer.concat(chunks).toString('utf8');
                     // Reproductores anidados que solo aceptan la página original: también desde aquí
                     if (!nested) {
-                        for (const { raw, f } of await needsOwnReferer(html, href, req)) {
+                        const players = await needsOwnReferer(html, href, req);
+                        // La página solo envuelve el reproductor (con su margen blanco y su
+                        // publicidad alrededor): se sirve directamente el reproductor, que
+                        // ocupa todo (igual que en la app). Ya está dentro del iframe de
+                        // BuriTV, así que sigue "embebido".
+                        const sole = players.find((x) => x.sole);
+                        if (sole) {
+                            res.writeHead(302, {
+                                ...cors,
+                                Location: `/page?url=${encodeURIComponent(sole.f.toString())}&ref=${encodeURIComponent(`${new URL(href).origin}/`)}&m=${muted ? 1 : 0}&v=${volume}`,
+                                'Cache-Control': 'no-store',
+                            });
+                            return res.end();
+                        }
+                        for (const { raw, f } of players) {
                             const src = `${relayOrigin}/page?url=${encodeURIComponent(f.toString())}&ref=${encodeURIComponent(`${new URL(href).origin}/`)}&m=${muted ? 1 : 0}&v=${volume}`;
                             html = html.split(`"${raw}"`).join(`"${src}"`).split(`'${raw}'`).join(`'${src}'`);
                         }
                     }
+                    // Sin publicidad y sin arrancar en silencio
+                    html = cleanPlayerHtml(html);
                     // Scripts en línea: que vean el dominio original
                     html = html.replace(
                         /(<script(?![^>]*\bsrc=)[^>]*>)([\s\S]*?)(<\/script>)/gi,
@@ -629,7 +690,7 @@ function handlePage(req, res, url) {
                     // El script va antes del <base>: con el <base> ya puesto, history.replaceState
                     // resolvía la ruta contra el otro dominio, fallaba y la página no veía su
                     // ?id=… (DSPORTS opción 1 mostraba "Canal no disponible")
-                    const inject = `${nested ? NET_SCRIPT(new URL(href).origin, ref) : ''}${AUDIO_SCRIPT(muted, volume, href)}<base href="${href}">`;
+                    const inject = `${NO_POPUPS_SCRIPT}${nested ? NET_SCRIPT(new URL(href).origin, ref) : ''}${AUDIO_SCRIPT(muted, volume, href)}<base href="${href}">`;
                     html = /<head[^>]*>/i.test(html)
                         ? html.replace(/<head[^>]*>/i, (h) => h + inject)
                         : inject + html;

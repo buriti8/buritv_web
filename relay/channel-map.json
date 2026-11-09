@@ -9,10 +9,13 @@
     "espn-5": ["ESPN 5"],
     "espn-6": ["ESPN 6"],
     "espn-7": ["ESPN 7"],
+    "espn-premium": ["ESPN Premium"],
+    "espn-deportes": ["ESPN Deportes"],
     "dsports": ["DSports", "DirecTV Sports"],
     "dsports-2": ["DSports 2", "DirecTV Sports 2"],
     "dsports-plus": ["DSports +", "DirecTV Sports +"],
     "tyc-sports": ["TyC Sports Internacional", "TyC Sports"],
+    "tnt-sports": ["TNT Sports Argentina", "TNT Sports"],
     "fox-one": ["FOX One"],
     "caracol": ["Caracol TV"],
     "rcn": ["RCN TV"]
