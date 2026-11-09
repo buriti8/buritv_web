@@ -2154,33 +2154,63 @@ p {
     outline-offset: -2px;
 }
 
-/* ── Volumen: botón + deslizador que se despliega al acercar el cursor ── */
+/* ── Volumen: botón + popover vertical que se despliega hacia arriba ──
+   Se abre al pasar el cursor por el botón o por el propio popover (el
+   padding inferior hace de puente para no perderlo al subir el cursor).
+   Silenciado no se muestra: el botón solo quita el silencio. */
 .volume {
+    position: relative;
     display: flex;
     align-items: center;
+}
+.volume-pop {
+    position: absolute;
+    left: 50%;
+    bottom: 100%;
+    z-index: 5;
+    padding-bottom: 8px;
+    transform: translate(-50%, 6px);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    width: 36px;
+    height: 120px; /* 112px de caja + 8px de puente */
+    transition: opacity 0.15s, transform 0.15s, visibility 0.15s;
+}
+.volume:not(.is-muted):hover .volume-pop,
+.volume:not(.is-muted):has(:focus-visible) .volume-pop {
+    transform: translate(-50%, 0);
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+/* Caja del popover: el deslizador horizontal va girado adentro */
+.volume-pop::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 8px;
+    border-radius: 18px;
+    background: rgba(12, 18, 16, 0.92);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
 }
 .volume-slider {
     -webkit-appearance: none;
     appearance: none;
-    width: 0;
+    position: absolute;
+    left: 50%;
+    top: 56px;
+    width: 88px;
     height: 4px;
     margin: 0;
     padding: 0;
-    opacity: 0;
     border-radius: 2px;
+    transform: translate(-50%, -50%) rotate(-90deg);
     background: linear-gradient(
         to right,
         var(--focus) var(--vol, 100%),
         var(--on-video-line) var(--vol, 100%)
     );
     cursor: pointer;
-    transition: width 0.18s, opacity 0.18s, margin 0.18s;
-}
-.volume:hover .volume-slider,
-.volume:focus-within .volume-slider {
-    width: 84px;
-    margin: 0 8px 0 6px;
-    opacity: 1;
 }
 .volume-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
@@ -2199,7 +2229,7 @@ p {
 }
 /* En pantallas táctiles el volumen lo manejan los botones del equipo */
 @media (hover: none) {
-    .volume-slider {
+    .volume-pop {
         display: none;
     }
 }

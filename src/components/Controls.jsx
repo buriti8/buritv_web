@@ -91,13 +91,15 @@ export default function Controls({
                 ) : null}
                 </div>
                 <div className="controls-util">
-                    <div className="volume">
+                    <div className={`volume${muted ? ' is-muted' : ''}`}>
                         <Btn
                             icon={muted || volume === 0 ? 'mute' : 'volume'}
                             label={muted ? 'Activar sonido (M)' : 'Silenciar (M)'}
                             onClick={toggleMute}
                             size="sm"
                         />
+                        {/* Popover vertical del volumen: se despliega hacia arriba al pasar el cursor */}
+                        <div className="volume-pop">
                         <input
                             type="range"
                             className="volume-slider"
@@ -112,6 +114,7 @@ export default function Controls({
                             title="Volumen (+ / -)"
                             style={{ '--vol': `${muted ? 0 : Math.round(volume * 100)}%` }}
                         />
+                        </div>
                     </div>
                     {wide && (
                         <Btn

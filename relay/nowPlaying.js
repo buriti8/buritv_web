@@ -104,16 +104,25 @@ const state = {
 const unmapped = new Set();
 
 async function refreshGuide() {
-    const data = await getJson(
-        `${BASE}/tvguide?country=${COUNTRY}&timezone=${encodeURIComponent(TIMEZONE)}`,
-    );
+    // FotMob arma los días de la guía según la fecha UTC: con timezone de
+    // Bogotá, desde las 7 p. m. (00:00 UTC) se pierden los partidos de esa
+    // noche. Sin timezone sí vienen. Se piden ambas y se unen por id.
+    const results = await Promise.allSettled([
+        getJson(`${BASE}/tvguide?country=${COUNTRY}`),
+        getJson(`${BASE}/tvguide?country=${COUNTRY}&timezone=${encodeURIComponent(TIMEZONE)}`),
+    ]);
+    const datas = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+    if (!datas.length) throw results[0].reason;
     const byName = channelMap();
     const guide = [];
     const fresh = [];
-    for (const leagues of Object.values(data || {})) {
+    const seen = new Set();
+    for (const leagues of datas.flatMap((d) => Object.values(d || {}))) {
         if (!Array.isArray(leagues)) continue;
         for (const L of leagues) {
             for (const m of L.matches || []) {
+                if (seen.has(m.id)) continue;
+                seen.add(m.id);
                 const channelIds = new Set();
                 for (const c of m.channels || []) {
                     const ids = byName.get(norm(c.name));
