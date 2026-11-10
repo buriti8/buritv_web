@@ -24,6 +24,9 @@ import { requestJson, requestText } from './http.js';
 const TTL_MS = 60 * 1000;
 const YT_TTL_MS = 2 * 60 * 1000;
 const RETRY_MS = 60 * 1000;
+// Más viejo que esto, /streams espera la consulta nueva (como mucho WAIT_MS)
+const STALE_MS = 3 * 60 * 1000;
+const WAIT_MS = 10 * 1000;
 // Client-ID público de la web de Twitch (el que usan streamlink, yt-dlp…)
 const TWITCH_CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
 const TWITCH_GQL = 'https://gql.twitch.tv/gql';
@@ -211,12 +214,27 @@ async function refresh(loadM3u) {
     await ensure(list);
     const channels = {};
     const sources = {};
+    const liveBy = {}; // tvgId → { 'plataforma:handle': estado } de las opciones en vivo
     for (const s of list) {
-        const data = cache.get(`${s.platform}:${s.handle}`)?.data;
+        const key = `${s.platform}:${s.handle}`;
+        const data = cache.get(key)?.data;
         if (!data) continue;
         sources[s.url] = data;
         // El canal: la primera opción en vivo; si ninguna, la primera
         if (!channels[s.tvgId] || (data.live && !channels[s.tvgId].live)) channels[s.tvgId] = data;
+        // (la misma cuenta en dos URLs cuenta una vez)
+        if (data.live) (liveBy[s.tvgId] ||= {})[key] = data;
+    }
+    // Multistream (p. ej. Twitch + YouTube a la vez): se suman los espectadores
+    for (const [tvgId, byKey] of Object.entries(liveBy)) {
+        const lives = Object.values(byKey);
+        if (lives.length < 2) continue;
+        const counted = lives.filter((d) => d.viewers != null);
+        channels[tvgId] = {
+            ...channels[tvgId],
+            viewers: counted.length ? counted.reduce((n, d) => n + d.viewers, 0) : null,
+            multi: lives.map((d) => ({ platform: d.platform, viewers: d.viewers ?? null })),
+        };
     }
     state = { updatedAt: Date.now(), channels, sources };
 }
@@ -229,8 +247,12 @@ export async function getStreams(loadM3u) {
             .finally(() => {
                 loading = null;
             });
-        // La primera vez se espera; después se responde con lo que hay
+        // Si lo que hay es reciente se responde ya; si es viejo (p. ej. nadie
+        // pidió en horas) se espera la consulta, hasta WAIT_MS, para no dar
+        // como "en vivo" a quien ya apagó.
         if (!state.updatedAt) await loading;
+        else if (Date.now() - state.updatedAt >= STALE_MS)
+            await Promise.race([loading, new Promise((r) => setTimeout(r, WAIT_MS))]);
     }
     return state;
 }

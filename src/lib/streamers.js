@@ -74,8 +74,16 @@ export function streamText(s) {
     return [s.viewers != null && fmtViewers(s.viewers), s.title || 'En vivo'].filter(Boolean).join(' · ');
 }
 
-/** Para el title: el mismo texto completo y, debajo, la categoría. */
+const PLATFORM_NAMES = { twitch: 'Twitch', kick: 'Kick', youtube: 'YouTube' };
+
+/** Para el title: el mismo texto completo, debajo la categoría y, si es multistream, el detalle. */
 export function streamTitle(s) {
     if (!s) return undefined;
-    return [streamText(s), s.live && s.game].filter(Boolean).join('\n');
+    const multi =
+        s.live && s.multi?.length > 1
+            ? s.multi
+                  .map((m) => `${PLATFORM_NAMES[m.platform] || m.platform}: ${m.viewers != null ? fmtViewers(m.viewers) : '?'}`)
+                  .join(' + ')
+            : null;
+    return [streamText(s), s.live && s.game, multi].filter(Boolean).join('\n');
 }
