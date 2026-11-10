@@ -18,9 +18,13 @@ export const M3U_RETRY_MS = [3000, 8000, 15000, 30000];
 export const NOW_PLAYING_URLS = ['./now-playing', `${RELAY_URL}/now-playing`];
 export const NOW_PLAYING_POLL_MS = 60000;
 
-// ── Programación de cada canal (guías XMLTV, vía el relay) ────────────────
+// ── Streamers: en vivo y título (Twitch, Kick, YouTube, vía el relay) ───
+export const STREAMS_URLS = ['./streams', `${RELAY_URL}/streams`];
+export const STREAMS_POLL_MS = 60000;
+
+// ── Programación de cada canal (Movistar / Claro / XMLTV, vía el relay) ──
 export const EPG_URLS = ['./epg', `${RELAY_URL}/epg`];
-export const EPG_POLL_MS = 15 * 60 * 1000;
+export const EPG_POLL_MS = 10 * 60 * 1000;
 // Cada cuánto se recalcula "Ahora / Sigue" y la barra de progreso
 export const EPG_TICK_MS = 30000;
 

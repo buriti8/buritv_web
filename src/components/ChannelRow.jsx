@@ -2,14 +2,19 @@ import { forwardRef, memo, useRef, useState } from 'react';
 import Icon from './Icon';
 import { matchText, matchTitle } from '../lib/matchText';
 import { epgNowText, epgTitle } from '../lib/epgText';
+import { streamText, streamTitle } from '../lib/streamers';
 
 /**
  * Fila de canal: número, logo, nombre y estado (o el partido que está dando,
- * o el programa que está al aire según la guía).
+ * si el streamer está en vivo y con qué título, o el programa que está al
+ * aire según la guía).
  * Favorito: mantener presionado (táctil) o clic derecho.
  */
 const ChannelRow = memo(
-    forwardRef(function ChannelRow({ item, index, active, favorite, match, epg, onSelect, onToggleFavorite }, ref) {
+    forwardRef(function ChannelRow(
+        { item, index, active, favorite, match, stream, epg, onSelect, onToggleFavorite },
+        ref,
+    ) {
         const [logoError, setLogoError] = useState(false);
         const press = useRef({ timer: null, long: false });
         const count = item.sources.length;
@@ -56,6 +61,11 @@ const ChannelRow = memo(
                         <span className={`row-sub row-match ${match.state}`} title={matchTitle(match)}>
                             {match.state === 'live' && <span className="dot live" />}
                             <span className="row-match-text">{matchText(match)}</span>
+                        </span>
+                    ) : stream ? (
+                        <span className={`row-sub row-match${stream.live ? ' live' : ' soon'}`} title={streamTitle(stream)}>
+                            {stream.live && <span className="dot live" />}
+                            <span className="row-match-text">{streamText(stream)}</span>
                         </span>
                     ) : epgNowText(epg) ? (
                         <span className="row-sub row-epg" title={epgTitle(epg)}>

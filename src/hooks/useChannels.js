@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { M3U_URLS, M3U_TIMEOUT_MS, M3U_RETRY_MS } from '../config';
 import parseM3U from '../lib/parseM3U';
+import { playableSource } from '../lib/streamers';
 import { load, save } from '../lib/storage';
 
 const K_LAST_CHANNEL = 'lastChannelId';
@@ -145,7 +146,7 @@ export default function useChannels() {
 
     const applyList = useCallback(
         (text) => {
-            const { channels: parsed } = parseM3U(text);
+            const parsed = parseM3U(text).channels.map((ch) => ({ ...ch, sources: ch.sources.map(playableSource) }));
             if (!parsed.length) return false;
             // ¿Primera carga? Se mira antes de fijar el canal
             const firstLoad = !currentRef.current;

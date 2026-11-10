@@ -21,7 +21,9 @@
  *   GET /page?url=<url>&m=0|1&v=0-1     → la página con el audio bajo control de BuriTV
  *   GET /m3u                          → la lista de canales (desde Google Drive)
  *   GET /now-playing                  → { updatedAt, channels: { <tvg-id>: partido } } (FotMob)
- *   GET /epg                          → { updatedAt, channels: { <tvg-id>: [programas] } } (open-epg)
+ *   GET /epg                          → { updatedAt, channels: { <tvg-id>: [programas] } } (Movistar, Claro, Warner, epgshare01)
+ *   GET /streams                      → { updatedAt, channels, sources } streamers en vivo y su título (Twitch, Kick, YouTube)
+ *   GET /twitch/<canal>.m3u8          → la señal HLS del canal de Twitch (404 si no está en vivo)
  *   GET /*                            → la web (carpeta dist), si existe
  *
  * Uso: docker compose up -d   (o npm run relay, con ffmpeg instalado)
@@ -37,6 +39,7 @@ import { extname, join, normalize } from 'node:path';
 import { getNowPlaying } from './nowPlaying.js';
 import { ensureFeed, handleFeed, stopFeed, stopIdleFeeds } from './prefetch.js';
 import { getEpg, warmEpg } from './epg.js';
+import { getStreams, getTwitchPlaylist } from './streams.js';
 
 const PORT = Number(process.env.RELAY_PORT || 8090);
 // Sin pedidos durante este tiempo, el proceso de ffmpeg se detiene
@@ -330,20 +333,32 @@ function getText(url, hops = 0) {
     });
 }
 
-async function handleM3u(req, res) {
-    const headers = { 'Content-Type': 'audio/x-mpegurl; charset=utf-8', 'Cache-Control': 'no-store' };
-    if (m3uCache.text && Date.now() - m3uCache.at < 300000) return send(res, 200, m3uCache.text, headers);
+/** Texto de la lista (con caché de 5 minutos), o null si no se pudo bajar. */
+async function loadM3u() {
+    if (m3uCache.text && Date.now() - m3uCache.at < 300000) return m3uCache.text;
     for (const url of M3U_URLS) {
         try {
             const r = await getText(url);
             if (r.status === 200 && r.text.includes('#EXTINF')) {
                 m3uCache = { text: r.text, at: Date.now() };
-                return send(res, 200, r.text, headers);
+                return r.text;
             }
         } catch {}
     }
-    if (m3uCache.text) return send(res, 200, m3uCache.text, headers);
+    return m3uCache.text;
+}
+
+async function handleM3u(req, res) {
+    const text = await loadM3u();
+    if (text) return send(res, 200, text, { 'Content-Type': 'audio/x-mpegurl; charset=utf-8', 'Cache-Control': 'no-store' });
     send(res, 502, 'No se pudo descargar la lista');
+}
+
+/** Twitch en HLS: la lista principal (las calidades y segmentos se piden directo a Twitch). */
+async function handleTwitch(req, res, login) {
+    const text = await getTwitchPlaylist(login);
+    if (!text) return send(res, 404, 'no está en vivo');
+    send(res, 200, text, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Cache-Control': 'no-store' });
 }
 
 // Cabeceras de un navegador cargando la página dentro de un iframe. Algunas
@@ -758,6 +773,12 @@ const server = http.createServer((req, res) => {
         return getEpg()
             .then((data) => send(res, 200, JSON.stringify(data), { 'Content-Type': 'application/json', 'Cache-Control': 'max-age=300' }))
             .catch(() => json(res, 200, { updatedAt: Date.now(), channels: {} }));
+    if (url.pathname === '/streams')
+        return getStreams(loadM3u)
+            .then((data) => send(res, 200, JSON.stringify(data), { 'Content-Type': 'application/json', 'Cache-Control': 'max-age=30' }))
+            .catch(() => json(res, 200, { updatedAt: Date.now(), channels: {}, sources: {} }));
+    const tw = url.pathname.match(/^\/twitch\/(\w{2,25})\.m3u8$/);
+    if (tw) return handleTwitch(req, res, tw[1]).catch(() => send(res, 502, ''));
     if (m) return handleFile(req, res, m[1], m[2]);
     if (url.pathname.startsWith('/p/')) return handleFeed(req, res, url)
             .then((ok) => ok || send(res, 404, 'no existe'))

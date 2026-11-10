@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { canEmbed, relayAvailable, relayPageUrl } from '../lib/relay';
+import { fetchStreams, isYouTubeLivePage } from '../lib/streamers';
 import Icon from './Icon';
 
 /**
  * Embeds web (Kick, YouTube, Twitch…) en un iframe.
  *  - Twitch exige el dominio de esta página en `parent`: se reescribe solo.
- *  - YouTube "watch" se pasa a su versión embebible.
+ *  - YouTube "watch" se pasa a su versión embebible, y "/@canal/live" al
+ *    video en vivo del momento (lo da el relay en /streams).
  *  - Las páginas que prohíben mostrarse dentro de otra (X-Frame-Options)
  *    no se pueden ver aquí: si hay otras opciones se pasa a la siguiente;
  *    si no, se ofrece abrirla en una pestaña nueva.
@@ -45,7 +47,49 @@ const directPages = new Set();
 // YouTube se silencia al instante por mensaje; el resto recarga con el parámetro "muted"
 const isYouTube = (url) => /(^|.)(youtube.com|youtu.be)$/.test(new URL(url, location.href).hostname);
 
-export default function WebEmbed({
+/**
+ * YouTube "/@canal/live" no se puede embeber: se busca el video que está en
+ * vivo. Si el canal no está transmitiendo, se pasa a otra opción (o se avisa).
+ */
+export default function WebEmbed(props) {
+    const { url, hasAlternatives, onLoaded, onFail } = props;
+    const livePage = isYouTubeLivePage(url);
+    const [resolved, setResolved] = useState({ for: null, url: null });
+
+    useEffect(() => {
+        if (!livePage) return;
+        let cancelled = false;
+        fetchStreams().then((data) => {
+            if (cancelled) return;
+            const id = data?.sources?.[url]?.videoId;
+            setResolved({ for: url, url: id ? `https://www.youtube.com/watch?v=${id}` : null });
+            if (!id) {
+                if (hasAlternatives) onFail?.('error', { dead: true, detail: 'no está en vivo' });
+                else onLoaded?.();
+            }
+        });
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [url, livePage]);
+
+    if (!livePage) return <Embed {...props} />;
+    if (resolved.for !== url) return null;
+    if (!resolved.url) {
+        return (
+            <div className="status status-dark">
+                <p className="status-title">No está en vivo ahora</p>
+                <a className="btn-tonal" href={url} target="_blank" rel="noreferrer">
+                    <Icon name="external" size={14} /> Abrir en YouTube
+                </a>
+            </div>
+        );
+    }
+    return <Embed {...props} url={resolved.url} />;
+}
+
+function Embed({
     url,
     muted: mutedProp = false,
     volume = 1,
@@ -114,7 +158,7 @@ export default function WebEmbed({
 
     useEffect(() => {
         let cancelled = false;
-        canEmbed(url).then((ok) => {
+        canEmbed(embedUrl(url)).then((ok) => {
             if (cancelled) return;
             setAllowed(ok);
             if (!ok) {
